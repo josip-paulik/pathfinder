@@ -1,4 +1,4 @@
-class Pathfinder {
+export class Pathfinder {
     private readonly grid: Grid;
     private readonly HORIZONTAL_ROAD: string = '-';
     private readonly VERTICAL_ROAD: string = '|';
@@ -7,8 +7,8 @@ class Pathfinder {
     private readonly START_CHARACTER: string = '@';
     private readonly END_CHARACTER: string = 'x';
     private readonly VALID_GRID_CHARACTERS: RegExp = /[A-Z@x\+\-\|\s]/;
-    private collectedLetterCoordinates: { x: number, y: number }[] = [];
-    private collectedPathCharacters: string[] = [];
+    private startPoint?: { row: number, col: number };
+    private endPoint?: { row: number, col: number };
 
     constructor(
         private readonly gridParam: string[][],
@@ -20,42 +20,76 @@ class Pathfinder {
         if (!this.checkGridValidity()) {
             throw new Error('Invalid grid');
         }
-        
-    }
+
+        const { visitedCoordinates, uniqueLetters } = this.walkPath();
+
+        return { visitedCoordinates, uniqueLetters };
+
+    }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
 
     private checkGridValidity(): boolean {
-        if (!this.grid.checkForInvalidCharacters(this.VALID_GRID_CHARACTERS)) {
-            return false;
+        const validityChecks = new Map<string, (row: number, col: number) => boolean>();
+
+        // set rules for each character
+
+        validityChecks.set(this.START_CHARACTER, (row, col) => {
+            console.log('start point', row, col);
+            if (this.startPoint) {
+                return false;
+            }
+            this.startPoint = { row, col };
+            return this.checkStartPoint({ row, col });
+        });
+        validityChecks.set(this.END_CHARACTER, (row, col) => {
+            console.log('end point', row, col);
+            if (this.endPoint) {
+                return false;
+            }
+            this.endPoint = { row, col };
+            return true;
+        });
+        validityChecks.set(this.CROSSROAD, (row, col) => {
+            console.log('crossroad', row, col);
+            return this.checkCrossroad({ row, col });
+        });
+        validityChecks.set(this.HORIZONTAL_ROAD, (row, col) => {
+            console.log('horizontal road', row, col);
+            return this.checkHorizontalRoad({ row, col });
+        });
+        validityChecks.set(this.VERTICAL_ROAD, (row, col) => {
+            console.log('vertical road', row, col);
+            return this.checkVerticalRoad({ row, col });
+        });
+
+        const regExpValidityChecks = new Map<RegExp, (row: number, col: number) => boolean>();
+        regExpValidityChecks.set(this.UPPERCASE_ALPHABET, (row, col) => {
+            console.log('uppercase letter', row, col);
+            return this.checkUppercaseLetter({ row, col });
+        });
+
+
+        const validity = this.grid.runValidityChecks(validityChecks, regExpValidityChecks, this.VALID_GRID_CHARACTERS);
+        if (!validity) {
+            throw new Error('Invalid grid');
         }
 
-        const startPoints = this.grid.getAllCharacterOccurences(this.START_CHARACTER);
-        const endPoints = this.grid.getAllCharacterOccurences(this.END_CHARACTER);
-
-        if (startPoints.length !== 1 || endPoints.length !== 1) {
-            return false;
+        if (!this.startPoint || !this.endPoint) {
+            throw new Error('Start or end point not found');
         }
-
-        if (!this.checkStartPoint(startPoints[0])) {
-            return false;
-        }
-
-        const crossroads = this.grid.getAllCharacterOccurences(this.CROSSROAD);
-        if (!this.checkCrossroads(crossroads)) {
-            return false;
-        }
-
-        
-
-        // checking path validity would require me to actually solve the path
-        // and to do that I would have to implement a pathfinding algorithm in this method
-        // which would be inneficient at best
 
         return true;
     }
 
-    private checkStartPoint(startPoint: { x: number, y: number }): boolean {
-        const neighbors = this.grid.getNeighbors(startPoint.x, startPoint.y);
+    /**
+     * Check if the start point is valid.
+     * Start point must have exactly one neighbor.
+     * @param startPoint 
+     * @returns true if the start point is valid, false otherwise
+     */
+    private checkStartPoint(startPoint: { row: number, col: number }): boolean {
+        const neighbors = this.grid.getNeighbors(startPoint.row, startPoint.col);
         const neighborsCount = Object.values(neighbors).filter(Boolean).length;
+        console.log('neighborsCount for start point', neighborsCount, neighbors);
         if (neighborsCount !== 1) {
             return false;
         }
@@ -63,27 +97,154 @@ class Pathfinder {
         return true;
     }
 
-    private checkCrossroads(crossroads: { x: number, y: number }[]): boolean {
-        for (const crossroad of crossroads) {
-            const neighbors = this.grid.getNeighbors(crossroad.x, crossroad.y);
-            
-            // intersection must have exactly 2 roads coming into it
-            const neighborsCount = Object.values(neighbors).filter(Boolean).length;
-            if (neighborsCount !== 2) {
-                return false;
-            }
+    /**
+     * Check if the crossroad is valid.
+     * Crossroad must have exactly 2 roads coming into it.
+     * And it must not be a fake turn.
+     * @param crossroad 
+     * @returns true if the crossroad is valid, false otherwise
+     */
+    private checkCrossroad(crossroad: { row: number, col: number }): boolean {
+        const neighbors = this.grid.getNeighbors(crossroad.row, crossroad.col);
+        
+        console.log('neighbors for crossroad', neighbors);
+        // intersection must have exactly 2 roads coming into it
+        const neighborsCount = Object.values(neighbors).filter(Boolean).length;
+        if (neighborsCount !== 2) {
+            return false;
+        }
 
-            // check for fake turns
-            if (neighbors.up && neighbors.down && !neighbors.left && !neighbors.right) {
-                return false;
-            }
+        // check for fake turns - turns that are continun on straight roads
+        if (neighbors.up && neighbors.down && !neighbors.left && !neighbors.right) {
+            return false;
+        }
 
-            if (!neighbors.up && !neighbors.down && neighbors.left && neighbors.right) {
-                return false;
-            }
+        if (!neighbors.up && !neighbors.down && neighbors.left && neighbors.right) {
+            return false;
         }
 
         return true;
+    }
+
+    /**
+     * Check if the horizontal road is valid.
+     * Horizontal road must have at least two neighbors.
+     * @param horizontalRoad 
+     * @returns true if the horizontal road is valid, false otherwise
+     */
+    private checkHorizontalRoad(horizontalRoad: { row: number, col: number }): boolean {
+        const neighbors = this.grid.getNeighbors(horizontalRoad.row, horizontalRoad.col);
+        if (Object.values(neighbors).filter(Boolean).length < 2) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Check if the vertical road is valid.
+     * Vertical road must have at least two neighbors.
+     * @param verticalRoad 
+     * @returns true if the vertical road is valid, false otherwise
+     */
+    private checkVerticalRoad(verticalRoad: { row: number, col: number }): boolean {
+        const neighbors = this.grid.getNeighbors(verticalRoad.row, verticalRoad.col);
+        if (Object.values(neighbors).filter(Boolean).length < 2) {
+            return false;
+        }
+        return true;
+    }
+
+
+    /**
+     * Check if the uppercase letter is valid.
+     * Uppercase letter must have at least two neighbors.
+     * @param uppercaseLetter 
+     * @returns true if the uppercase letter is valid, false otherwise
+     */
+    private checkUppercaseLetter(uppercaseLetter: { row: number, col: number }): boolean {
+        const neighbors = this.grid.getNeighbors(uppercaseLetter.row, uppercaseLetter.col);
+        if (Object.values(neighbors).filter(Boolean).length < 2) {
+            return false;
+        }
+        return true;
+    }
+
+    private walkPath() {
+        var lastDirection: 'up' | 'down' | 'left' | 'right' | null = null;
+        const visitedCoordinates: { row: number, col: number, character: string }[] = [];
+        for (let {row, col} = this.startPoint as {row: number, col: number}; this.grid.getPoint(row, col) !== this.END_CHARACTER;) {
+            const currentCharacter = this.grid.getPoint(row, col);
+            const neighbors = this.grid.getNeighbors(row, col);
+            visitedCoordinates.push({ row, col, character: currentCharacter });
+
+            switch (currentCharacter) {
+                case this.START_CHARACTER:
+                    if (neighbors.up) {
+                        lastDirection = 'up';
+                        row--;
+                    } else if (neighbors.down) {
+                        lastDirection = 'down';
+                        row++;
+                    } else if (neighbors.left) {
+                        lastDirection = 'left';
+                        col--;
+                    } else if (neighbors.right) {
+                        lastDirection = 'right';
+                        col++;
+                    }
+                    break;
+                case this.CROSSROAD:
+                    switch (lastDirection) {
+                        // we checked for fake turns in validity checks
+                        case 'up':
+                        case 'down':
+                            if (neighbors.left) {
+                                lastDirection = 'left';
+                                col--;
+                            } else if (neighbors.right) {
+                                lastDirection = 'right';
+                                col++;
+                            }
+                            break;
+                        case 'left':
+                        case 'right':
+                            if (neighbors.up) {
+                                lastDirection = 'up';
+                                row--;
+                            } else if (neighbors.down) {
+                                lastDirection = 'down';
+                                row++;
+                            }
+                            break;
+                        default:
+                            throw new Error('Invalid direction');
+                    }
+                    break;
+                case this.END_CHARACTER:
+                    break;
+                default:
+                    if (lastDirection === 'up') {
+                        row--;
+                    } else if (lastDirection === 'down') {
+                        row++;
+                    } else if (lastDirection === 'left') {
+                        col--;
+                    } else if (lastDirection === 'right') {
+                        col++;
+                    }
+                    break;
+            }
+        }
+
+        // get all unique letters in visited coordinates in exact order
+        const uniqueLetters = visitedCoordinates.reduce((acc: {row: number, col: number, character: string}[], curr) => {
+            if (this.UPPERCASE_ALPHABET.test(curr.character) && !acc.some(x => x.row === curr.row && x.col === curr.col)) {
+                acc.push(curr);
+            }
+            return acc;
+        }, [])
+
+        return { visitedCoordinates, uniqueLetters };
     }
 }
 
@@ -97,27 +258,27 @@ type NeighborPoints = {
 /**
  * This class manages all grid related operations and activities.
  */
-class Grid {
+export class Grid {
     constructor(private readonly grid: string[][]) {}
 
     /**
      * Get the character at a given point
-     * @param x 
-     * @param y 
+     * @param row 
+     * @param col 
      * @returns character at the point or empty string if the point is out of bounds
      */
-    public getPoint(x: number, y: number) {
-        if (x < 0 || y < 0) {
-            throw new Error('Invalid coordinates');
+    public getPoint(row: number, col: number) {
+        if (row < 0 || col < 0) {
+            return '';
         }
 
         // grid is jagged matrix, so no need to return error
         // because some rows may be shorter than others
-        if (x >= this.grid.length || y >= this.grid[x].length) {
+        if (row >= this.grid.length || col >= this.grid[row].length) {
             return '';
         }
 
-        return this.grid[x][y];
+        return this.grid[row][col] === ' ' ? '' : this.grid[row][col];
     }
 
 
@@ -150,15 +311,15 @@ class Grid {
     /**
      * Get all occurrences of a character in the grid
      * @param character 
-     * @returns array of objects with x and y coordinates(empty array if there are no occurrences)
+     * @returns array of objects with x and col coordinates(empty array if there are no occurrences)
      */
-    public getAllCharacterOccurences(character: string): { x: number, y: number }[] {
-        const occurences: { x: number, y: number }[] = [];
+    public getAllCharacterOccurences(character: string): { row: number, col: number }[] {
+        const occurences: { row: number, col: number }[] = [];
 
-        for (let x = 0; x < this.grid.length; x++) {
-            for (let y = 0; y < this.grid[x].length; y++) {
-                if (this.getPoint(x, y) === character) {
-                    occurences.push({ x, y });
+        for (let row = 0; row < this.grid.length; row++) {
+            for (let col = 0; col < this.grid[row].length; col++) {
+                if (this.getPoint(row, col) === character) {
+                    occurences.push({ row, col });
                 }
             }
         }
@@ -169,31 +330,52 @@ class Grid {
 
     /**
      * Get the neighbors of a point
-     * @param x 
-     * @param y 
+     * @param row 
+     * @param col 
      * @returns object with up, down, left, and right neighbors
      */
-    public getNeighbors(x: number, y: number):  NeighborPoints {
+    public getNeighbors(row: number, col: number):  NeighborPoints {
         const neighbors: NeighborPoints = {
-            up: this.getPoint(x - 1, y),
-            down: this.getPoint(x + 1, y),
-            left: this.getPoint(x, y - 1),
-            right: this.getPoint(x, y + 1),
+            up: this.getPoint(row - 1, col),
+            down: this.getPoint(row + 1, col),
+            left: this.getPoint(row, col - 1),
+            right: this.getPoint(row, col + 1),
         };
 
         return neighbors;
     }
 
-    /**
-     * Check if the grid contains only valid characters
-     * @param characters - regular expression that contains all valid characters
-     * @returns true if the grid contains only valid characters, false otherwise
-     */
-    public checkForInvalidCharacters(characters: RegExp): boolean {
-        for (const row of this.grid) {
-            for (const cell of row) {
-                if (!characters.test(cell)) {
+    public runValidityChecks(
+        validityChecks: Map<string, (row: number, col: number) => boolean>,
+        regExpValidityChecks: Map<RegExp, (row: number, col: number) => boolean>,
+        validCharacters: RegExp,
+    ): boolean {
+        for (let row = 0; row < this.grid.length; row++) {
+            for (let col = 0; col < this.grid[row].length; col++) {
+                const character = this.grid[row][col];
+                
+                if (!validCharacters.test(character)) {
+                    console.log('invalid character', character);
                     return false;
+                }
+
+                if (validityChecks.has(character)) {
+                    const isValid = validityChecks.get(character)?.(row, col);
+                    if (!isValid) {
+                        console.log('invalid character', character);
+                        return false;
+                    }
+                    continue;
+                }
+
+                for (const regExp of regExpValidityChecks.keys()) {
+                    if (regExp.test(character)) {
+                        const isValid = regExpValidityChecks.get(regExp)?.(row, col);
+                        if (!isValid) {
+                            console.log('invalid character', character);
+                            return false;
+                        }
+                    }
                 }
             }
         }
