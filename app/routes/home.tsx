@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Pathfinder } from "~/pathfinder/pathfinder";
+import { VALID_EXAMPLES } from "~/constants/examples";
 
 export default function Home() {
   const [gridInput, setGridInput] = useState("");
@@ -34,12 +35,11 @@ export default function Home() {
 
       setParsedGrid(grid);
       
-      console.log(grid);
       const pathfinder = new Pathfinder(grid);
       const path = pathfinder.findPath();
-      setVisitedPath(path.visitedCoordinates);
-      setResult(`${path.visitedCoordinates.map(x => x.character).join('')}\n${path.uniqueLetters.map(x => x.character).join('')}`);
-      setError(null);
+      setVisitedPath(path.customData?.visitedCoordinates || []);
+      setResult(path.resultSuccess ? `${path.customData?.visitedCoordinates.map(x => x.character).join('')}\n${path.customData?.collectedLetters}` : null);
+      setError(path.errorDetails?.errorMessage || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
       setResult(null);
@@ -52,6 +52,21 @@ export default function Home() {
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Pathfinder</h1>
       
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold mb-2">Example Grids</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {VALID_EXAMPLES.map((example, index) => (
+            <button
+              key={index}
+              onClick={() => setGridInput(example.grid)}
+              className="p-2 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded transition-colors"
+            >
+              {example.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mb-4">
         <label className="block text-sm font-medium mb-2">
           Enter your grid (one row per line):
@@ -89,7 +104,7 @@ export default function Home() {
       {parsedGrid.length > 0 && (
         <div className="mt-8">
           <h2 className="text-xl font-bold mb-4">Path Visualization</h2>
-          <div className="grid-visualization font-mono bg-gray-100 p-4 rounded-md">
+          <div className="grid-visualization font-mono bg-gray-100 dark:bg-gray-800 p-4 rounded-md">
             {parsedGrid.map((row, rowIndex) => (
               <div key={rowIndex} className="flex">
                 {row.map((cell, colIndex) => {
