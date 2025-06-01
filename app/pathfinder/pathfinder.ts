@@ -20,14 +20,14 @@ export class Pathfinder {
         if (!this.checkGridValidity()) {
             throw new Error('Invalid grid');
         }
-
+        
         const { visitedCoordinates, uniqueLetters } = this.walkPath();
 
         return { visitedCoordinates, uniqueLetters };
 
-    }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+    }
 
-    private checkGridValidity(): boolean {
+    private setupValidityChecks() {
         const validityChecks = new Map<string, (row: number, col: number) => boolean>();
 
         // set rules for each character
@@ -67,8 +67,14 @@ export class Pathfinder {
             return this.checkUppercaseLetter({ row, col });
         });
 
+        return {validityChecks, regExpValidityChecks};
+    }
+
+    private checkGridValidity(): boolean {
+        const {validityChecks, regExpValidityChecks} = this.setupValidityChecks();
 
         const validity = this.grid.runValidityChecks(validityChecks, regExpValidityChecks, this.VALID_GRID_CHARACTERS);
+
         if (!validity) {
             throw new Error('Invalid grid');
         }
@@ -109,19 +115,39 @@ export class Pathfinder {
         
         console.log('neighbors for crossroad', neighbors);
         // intersection must have exactly 2 roads coming into it
-        const neighborsCount = Object.values(neighbors).filter(Boolean).length;
+        let neighborsCount = Object.values(neighbors).filter(Boolean).length;
+        if (neighbors.up === this.HORIZONTAL_ROAD) {
+            neighbors.up = '';
+            neighborsCount--;
+        }
+
+        if (neighbors.down === this.HORIZONTAL_ROAD) {
+            neighbors.down = '';
+            neighborsCount--;
+        }
+
+        if (neighbors.left === this.VERTICAL_ROAD) {
+            neighbors.left = '';
+            neighborsCount--;
+        }
+        
+        if (neighbors.right === this.VERTICAL_ROAD) {
+            neighbors.right = '';
+            neighborsCount--;
+        }
+
         if (neighborsCount !== 2) {
             return false;
         }
 
         // check for fake turns - turns that are continun on straight roads
-        if (neighbors.up && neighbors.down && !neighbors.left && !neighbors.right) {
-            return false;
-        }
+            if (neighbors.up && neighbors.down && !neighbors.left && !neighbors.right) {
+                return false;
+            }
 
-        if (!neighbors.up && !neighbors.down && neighbors.left && neighbors.right) {
-            return false;
-        }
+            if (!neighbors.up && !neighbors.down && neighbors.left && neighbors.right) {
+                return false;
+            }
 
         return true;
     }
@@ -134,10 +160,8 @@ export class Pathfinder {
      */
     private checkHorizontalRoad(horizontalRoad: { row: number, col: number }): boolean {
         const neighbors = this.grid.getNeighbors(horizontalRoad.row, horizontalRoad.col);
-        if (Object.values(neighbors).filter(Boolean).length < 2) {
-            return false;
-        }
-        return true;
+        
+        return !!neighbors.left && !!neighbors.right;
     }
 
     /**
@@ -148,25 +172,176 @@ export class Pathfinder {
      */
     private checkVerticalRoad(verticalRoad: { row: number, col: number }): boolean {
         const neighbors = this.grid.getNeighbors(verticalRoad.row, verticalRoad.col);
-        if (Object.values(neighbors).filter(Boolean).length < 2) {
-            return false;
-        }
-        return true;
+        
+        return !!neighbors.up && !!neighbors.down;
     }
 
 
     /**
      * Check if the uppercase letter is valid.
      * Uppercase letter must have at least two neighbors.
+     * It can act as a crossroad, or it can act as a straight road.
      * @param uppercaseLetter 
      * @returns true if the uppercase letter is valid, false otherwise
      */
     private checkUppercaseLetter(uppercaseLetter: { row: number, col: number }): boolean {
         const neighbors = this.grid.getNeighbors(uppercaseLetter.row, uppercaseLetter.col);
-        if (Object.values(neighbors).filter(Boolean).length < 2) {
-            return false;
+        let neighborsCount = Object.values(neighbors).filter(Boolean).length;
+        if (neighbors.up === this.HORIZONTAL_ROAD) {
+            neighbors.up = '';
+            neighborsCount--;
         }
-        return true;
+
+        if (neighbors.down === this.HORIZONTAL_ROAD) {
+            neighbors.down = '';
+            neighborsCount--;
+        }
+
+        if (neighbors.left === this.VERTICAL_ROAD) {
+            neighbors.left = '';
+            neighborsCount--;
+        }
+        
+        if (neighbors.right === this.VERTICAL_ROAD) {
+            neighbors.right = '';
+            neighborsCount--;
+        }
+
+        return neighborsCount === 2 || neighborsCount === 4;
+    }
+
+    private handleStartCharacter(row: number, col: number, neighbors: NeighborPoints): { row: number, col: number, lastDirection: 'up' | 'down' | 'left' | 'right' | null } {
+        let lastDirection: 'up' | 'down' | 'left' | 'right' | null = null;
+        if (neighbors.up) {
+            lastDirection = 'up';
+            row--;
+        } else if (neighbors.down) {
+            lastDirection = 'down';
+            row++;
+        } else if (neighbors.left) {
+            lastDirection = 'left';
+            col--;
+        } else if (neighbors.right) {
+            lastDirection = 'right';
+            col++;
+        }
+        return { row, col, lastDirection };
+    }
+
+    private handleCrossroad(row: number, col: number, neighbors: NeighborPoints, lastDirection: 'up' | 'down' | 'left' | 'right' | null): { row: number, col: number, lastDirection: 'up' | 'down' | 'left' | 'right' | null } {
+        switch (lastDirection) {
+            case 'up':
+            case 'down':
+                if (neighbors.left) {
+                    lastDirection = 'left';
+                    col--;
+                } else if (neighbors.right) {
+                    lastDirection = 'right';
+                    col++;
+                }
+                break;
+            case 'left':
+            case 'right':
+                if (neighbors.up) {
+                    lastDirection = 'up';
+                    row--;
+                } else if (neighbors.down) {
+                    lastDirection = 'down';
+                    row++;
+                }
+                break;
+            default:
+                throw new Error('Invalid direction');
+        }
+        return { row, col, lastDirection };
+    }
+
+    private handleRoad(row: number, col: number, lastDirection: 'up' | 'down' | 'left' | 'right' | null): { row: number, col: number, lastDirection: 'up' | 'down' | 'left' | 'right' | null } {
+        if (lastDirection === 'up') {
+            row--;
+        } else if (lastDirection === 'down') {
+            row++;
+        } else if (lastDirection === 'left') {
+            col--;
+        } else if (lastDirection === 'right') {
+            col++;
+        }
+        return { row, col, lastDirection };
+    }
+
+    private handleLetter(row: number, col: number, neighbors: NeighborPoints, lastDirection: 'up' | 'down' | 'left' | 'right' | null): { row: number, col: number, lastDirection: 'up' | 'down' | 'left' | 'right' | null } {
+        if (lastDirection === 'up') {
+            if (neighbors.up && neighbors.up !== this.HORIZONTAL_ROAD) {
+                col--;
+            }
+            if (neighbors.left && neighbors.left !== this.VERTICAL_ROAD) {
+                lastDirection = 'left';
+                row--;
+            }
+            if (neighbors.right && neighbors.right !== this.VERTICAL_ROAD) {
+                lastDirection = 'right';
+                row++;
+            }
+        }
+        if (lastDirection === 'down') {
+            if (neighbors.down && neighbors.down !== this.HORIZONTAL_ROAD) {
+                col++;
+            }
+            if (neighbors.left && neighbors.left !== this.VERTICAL_ROAD) {
+                lastDirection = 'left';
+                row--;
+            }
+            if (neighbors.right && neighbors.right !== this.VERTICAL_ROAD) {
+                lastDirection = 'right';
+                row++;
+            }
+        }
+        if (lastDirection === 'left') {
+            if (neighbors.left && neighbors.left !== this.VERTICAL_ROAD) {
+                col--;
+            }
+            if (neighbors.up && neighbors.up !== this.HORIZONTAL_ROAD) {
+                lastDirection = 'up';
+                row--;
+            }
+            if (neighbors.down && neighbors.down !== this.HORIZONTAL_ROAD) {
+                lastDirection = 'down';
+                row++;
+            }
+        }
+        if (lastDirection === 'right') {
+            if (neighbors.right && neighbors.right !== this.VERTICAL_ROAD) {
+                col++;
+            }
+            if (neighbors.up && neighbors.up !== this.HORIZONTAL_ROAD) {
+                lastDirection = 'up';
+                row--;
+            }
+            if (neighbors.down && neighbors.down !== this.HORIZONTAL_ROAD) {
+                lastDirection = 'down';
+                row++;
+            }
+        }
+        return { row, col, lastDirection };
+    }
+
+    private getNextDirection(row: number, col: number, lastDirection: 'up' | 'down' | 'left' | 'right' | null) {
+        const currentCharacter = this.grid.getPoint(row, col);
+        const neighbors = this.grid.getNeighbors(row, col);
+        
+        switch (currentCharacter) {
+            case this.START_CHARACTER:
+                return this.handleStartCharacter(row, col, neighbors);
+            case this.CROSSROAD:
+                return this.handleCrossroad(row, col, neighbors, lastDirection);
+            case this.END_CHARACTER:
+                return { row, col, lastDirection };
+            case this.HORIZONTAL_ROAD:
+            case this.VERTICAL_ROAD:
+                return this.handleRoad(row, col, lastDirection);
+            default:
+                return this.handleLetter(row, col, neighbors, lastDirection);
+        }
     }
 
     private walkPath() {
@@ -174,67 +349,15 @@ export class Pathfinder {
         const visitedCoordinates: { row: number, col: number, character: string }[] = [];
         for (let {row, col} = this.startPoint as {row: number, col: number}; this.grid.getPoint(row, col) !== this.END_CHARACTER;) {
             const currentCharacter = this.grid.getPoint(row, col);
-            const neighbors = this.grid.getNeighbors(row, col);
             visitedCoordinates.push({ row, col, character: currentCharacter });
 
-            switch (currentCharacter) {
-                case this.START_CHARACTER:
-                    if (neighbors.up) {
-                        lastDirection = 'up';
-                        row--;
-                    } else if (neighbors.down) {
-                        lastDirection = 'down';
-                        row++;
-                    } else if (neighbors.left) {
-                        lastDirection = 'left';
-                        col--;
-                    } else if (neighbors.right) {
-                        lastDirection = 'right';
-                        col++;
-                    }
-                    break;
-                case this.CROSSROAD:
-                    switch (lastDirection) {
-                        // we checked for fake turns in validity checks
-                        case 'up':
-                        case 'down':
-                            if (neighbors.left) {
-                                lastDirection = 'left';
-                                col--;
-                            } else if (neighbors.right) {
-                                lastDirection = 'right';
-                                col++;
-                            }
-                            break;
-                        case 'left':
-                        case 'right':
-                            if (neighbors.up) {
-                                lastDirection = 'up';
-                                row--;
-                            } else if (neighbors.down) {
-                                lastDirection = 'down';
-                                row++;
-                            }
-                            break;
-                        default:
-                            throw new Error('Invalid direction');
-                    }
-                    break;
-                case this.END_CHARACTER:
-                    break;
-                default:
-                    if (lastDirection === 'up') {
-                        row--;
-                    } else if (lastDirection === 'down') {
-                        row++;
-                    } else if (lastDirection === 'left') {
-                        col--;
-                    } else if (lastDirection === 'right') {
-                        col++;
-                    }
-                    break;
-            }
+            const newValues = this.getNextDirection(row, col, lastDirection);
+            row = newValues.row;
+            col = newValues.col;
+            lastDirection = newValues.lastDirection;
         }
+
+        visitedCoordinates.push({ row: this.endPoint!.row, col: this.endPoint!.col, character: this.END_CHARACTER });
 
         // get all unique letters in visited coordinates in exact order
         const uniqueLetters = visitedCoordinates.reduce((acc: {row: number, col: number, character: string}[], curr) => {
