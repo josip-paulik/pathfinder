@@ -58,8 +58,6 @@ npm test
 ```
 
 
-```
-
 ## Implementation Details
 
 The solution follows these key principles:

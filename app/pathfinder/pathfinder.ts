@@ -80,11 +80,37 @@ export class Pathfinder {
     }
 
     /**
+     * Sets everything needed for finding the path on grid.
+     * @returns true if the grid is valid, false otherwise
+     */
+    private setup(): ProcessResult {
+        const {characterProcesses, regExpProcesses} = this.setupProcesses();
+
+        const result = this.grid.runGridProcessing(characterProcesses, regExpProcesses, this.VALID_GRID_CHARACTERS);
+
+        if (!result.isSuccessful) {
+            return result;
+        }
+
+        if (!this.startPoint || !this.endPoint) {
+            const errorMessage = this.startPoint ? 'End point not found' : this.endPoint ? 'Start point not found' : 'Start and end point not found';
+            return {
+                isSuccessful: false,
+                errorDetails: {
+                    errorMessage: errorMessage
+                }
+            };
+        }
+
+        return result;
+    }
+
+    /**
      * Sets up processes that need to be ran during
      * setup process for pathfinder.
      * @returns processes for characters and regular expressions
      */
-    private setupProcesses() {
+    private setupProcesses(): {characterProcesses: Map<string, CharacterProcess>, regExpProcesses: Map<RegExp, CharacterProcess>} {
         const characterProcesses = new Map<string, CharacterProcess>();
         characterProcesses.set(this.START_CHARACTER, (row, col) => {
             if (this.startPoint) {
@@ -99,37 +125,7 @@ export class Pathfinder {
         });
 
         const regExpProcesses = new Map<RegExp, CharacterProcess>();
-        //regExpValidityChecks.set(this.UPPERCASE_ALPHABET, (row, col) => {
-        //    console.log('uppercase letter', row, col);
-        //    return this.checkUppercaseLetter({ row, col });
-        //});
-
         return {characterProcesses, regExpProcesses};
-    }
-
-    /**
-     * Sets everything needed for finding the path on grid.
-     * @returns true if the grid is valid, false otherwise
-     */
-    private setup(): ProcessResult {
-        const {characterProcesses, regExpProcesses} = this.setupProcesses();
-
-        const result = this.grid.runGridProcessing(characterProcesses, regExpProcesses, this.VALID_GRID_CHARACTERS);
-
-        if (!result.isSuccessful) {
-            return result;
-        }
-
-        if (!this.startPoint || !this.endPoint) {
-            return {
-                isSuccessful: false,
-                errorDetails: {
-                    errorMessage: 'Start or end point not found'
-                }
-            };
-        }
-
-        return result;
     }
 
     /**
@@ -142,11 +138,6 @@ export class Pathfinder {
         const neighbors = this.grid.getNeighbors(startPoint.row, startPoint.col);
         let neighborsCount = Object.values(neighbors).filter(Boolean).length;
         
-        // here we eliminate roads we cannot turn into
-        // i.e.
-        // |@|
-        //  | 
-        // vertical roads to the left and right of @ are not the roads we can turn into
         const cantGoUp = neighbors.up && neighbors.up === this.HORIZONTAL_ROAD;
         const cantGoDown = neighbors.down && neighbors.down === this.HORIZONTAL_ROAD;
         const cantGoLeft = neighbors.left && neighbors.left === this.VERTICAL_ROAD;
@@ -187,58 +178,80 @@ export class Pathfinder {
     }
 
     /**
-     * Check if the crossroad is valid.
-     * Crossroad must have exactly 2 roads coming into it.
-     * And it must not be a fake turn.
-     * @param crossroad 
-     * @returns true if the crossroad is valid, false otherwise
+     * Walks the path from start to end.
+     * @returns visited coordinates and collected letters
      */
-    private checkCrossroad(crossroad: { row: number, col: number }): boolean {
-        const neighbors = this.grid.getNeighbors(crossroad.row, crossroad.col);
-        
-        console.log('neighbors for crossroad', neighbors);
-        // intersection must have exactly 2 roads coming into it
-        let neighborsCount = Object.values(neighbors).filter(Boolean).length;
+    private walkPath(): TypedProcessResult<PathResult> {
+        var lastDirection: Direction = Direction.START;
+        const visitedCoordinates: { row: number, col: number, character: string }[] = [];
 
-        // here we eliminate roads we cannot turn into
-        // i.e.
-        // |+|
-        //  | 
-        // vertical roads to the left and right of + are not the roads we can turn into
-        if (neighbors.up === this.HORIZONTAL_ROAD) {
-            neighbors.up = '';
-            neighborsCount--;
-        }
+        for (let {row, col} = this.startPoint as {row: number, col: number}; lastDirection !== Direction.FINISH;) {
+            const currentCharacter = this.grid.getPoint(row, col);
 
-        if (neighbors.down === this.HORIZONTAL_ROAD) {
-            neighbors.down = '';
-            neighborsCount--;
-        }
+            visitedCoordinates.push({ row, col, character: currentCharacter });
 
-        if (neighbors.left === this.VERTICAL_ROAD) {
-            neighbors.left = '';
-            neighborsCount--;
-        }
-        
-        if (neighbors.right === this.VERTICAL_ROAD) {
-            neighbors.right = '';
-            neighborsCount--;
-        }
-
-        if (neighborsCount !== 2) {
-            return false;
-        }
+            const newValues = this.move(row, col, lastDirection);
             
-        // check for fake turns
+            if (newValues.lastDirection === Direction.ERROR) {
+                return {
+                    isSuccessful: false,
+                    customData: {
+                        visitedCoordinates,
+                        collectedLetters: this.getCollectedLetters(visitedCoordinates)
+                    },
+                    errorDetails: {
+                        row: newValues.row,
+                        col: newValues.col,
+                        errorMessage: newValues.errorMessage || 'Invalid path'
+                    }
+                };
+            }
 
-        const verticalStraight = neighbors.up && neighbors.down && !neighbors.left && !neighbors.right;
-        const horizontalStraight = !neighbors.up && !neighbors.down && neighbors.left && neighbors.right;
-
-        if (verticalStraight || horizontalStraight) {
-            return false;
+            row = newValues.row;
+            col = newValues.col;
+            lastDirection = newValues.lastDirection;
         }
 
-        return true;
+        const collectedLetters = this.getCollectedLetters(visitedCoordinates);
+
+        return { 
+            isSuccessful: true,
+            customData: {
+                visitedCoordinates,
+                collectedLetters
+            }
+        };
+    }
+
+    /**
+     * Based on current coordinates, and last direction,
+     * determine where to go next.
+     * @param row - current row
+     * @param col - current column
+     * @param lastDirection - last direction
+     * @returns new values for row, col and last direction
+     */
+    private move(
+        row: number,
+        col: number,
+        lastDirection: Direction
+    ): MovementResult {
+        const currentCharacter = this.grid.getPoint(row, col);
+        const neighbors = this.grid.getNeighbors(row, col);
+        
+        switch (currentCharacter) {
+            case this.START_CHARACTER:
+                return this.handleStartCharacter(row, col, neighbors);
+            case this.CROSSROAD:
+                return this.handleTurn(row, col, neighbors, lastDirection);
+            case this.HORIZONTAL_ROAD:
+            case this.VERTICAL_ROAD:
+                return this.handleRoad(row, col, lastDirection);
+            case this.END_CHARACTER:
+                return { row, col, lastDirection: Direction.FINISH };
+            default:
+                return this.handleLetter(row, col, neighbors, lastDirection);
+        }
     }
 
     /**
@@ -271,6 +284,66 @@ export class Pathfinder {
     }
 
     /**
+     * Check if the turn is valid.
+     * Turn must have exactly 2 roads coming into it.
+     * And it must not be a fake turn.
+     * @param turn 
+     * @returns true if the turn is valid, false otherwise
+     */
+    private checkTurn(turn: { row: number, col: number }): ProcessResult {
+        const neighbors = this.grid.getNeighbors(turn.row, turn.col);
+
+        let neighborsCount = Object.values(neighbors).filter(Boolean).length;
+
+        if (neighbors.up === this.HORIZONTAL_ROAD) {
+            neighbors.up = '';
+            neighborsCount--;
+        }
+
+        if (neighbors.down === this.HORIZONTAL_ROAD) {
+            neighbors.down = '';
+            neighborsCount--;
+        }
+
+        if (neighbors.left === this.VERTICAL_ROAD) {
+            neighbors.left = '';
+            neighborsCount--;
+        }
+        
+        if (neighbors.right === this.VERTICAL_ROAD) {
+            neighbors.right = '';
+            neighborsCount--;
+        }
+
+        if (neighborsCount !== 2) {
+            return {
+                isSuccessful: false,
+                errorDetails: {
+                    row: turn.row,
+                    col: turn.col,
+                    errorMessage: 'Turn must have exactly 2 roads coming into it'
+                }
+            };
+        }
+            
+        const verticalStraight = neighbors.up && neighbors.down && !neighbors.left && !neighbors.right;
+        const horizontalStraight = !neighbors.up && !neighbors.down && neighbors.left && neighbors.right;
+
+        if (verticalStraight || horizontalStraight) {
+            return {
+                isSuccessful: false,
+                errorDetails: {
+                    row: turn.row,
+                    col: turn.col,
+                    errorMessage: 'Turn must not be a straight path or a fork'
+                }
+            };
+        }
+
+        return { isSuccessful: true };
+    }
+
+    /**
      * Handles the crossroad.
      * @param row - row of the crossroad
      * @param col - column of the crossroad
@@ -284,13 +357,13 @@ export class Pathfinder {
         neighbors: NeighborPoints,
         lastDirection: Direction,
     ): MovementResult {
-        const crossroadValidity = this.checkCrossroad({ row, col });
-        if (!crossroadValidity) {
+        const turnValidity = this.checkTurn({ row, col });
+        if (!turnValidity.isSuccessful) {
             return { 
                 row, 
                 col, 
                 lastDirection: Direction.ERROR,
-                errorMessage: 'Invalid turn: must have exactly two connecting paths and cannot be a straight path or a fork'
+                errorMessage: turnValidity.errorDetails?.errorMessage || 'Invalid turn'
             };
         }
 
@@ -322,7 +395,6 @@ export class Pathfinder {
                 throw new Error('Invalid direction');
         }
 
-        // in case we can't turn anywhere, we are stuck
         if (row === lastRow && col === lastCol) {
             return { 
                 row, 
@@ -485,7 +557,6 @@ export class Pathfinder {
                 };
         }
 
-        // in case we can't move anywhere, we are stuck
         if (row === lastRow && col === lastCol) {
             return { 
                 row, 
@@ -496,83 +567,6 @@ export class Pathfinder {
         }
 
         return { row, col, lastDirection };
-    }
-
-    /**
-     * Based on current coordinates, and last direction,
-     * determine where to go next.
-     * @param row - current row
-     * @param col - current column
-     * @param lastDirection - last direction
-     * @returns new values for row, col and last direction
-     */
-    private move(
-        row: number,
-        col: number,
-        lastDirection: Direction
-    ): MovementResult {
-        const currentCharacter = this.grid.getPoint(row, col);
-        const neighbors = this.grid.getNeighbors(row, col);
-        
-        switch (currentCharacter) {
-            case this.START_CHARACTER:
-                return this.handleStartCharacter(row, col, neighbors);
-            case this.CROSSROAD:
-                return this.handleTurn(row, col, neighbors, lastDirection);
-            case this.HORIZONTAL_ROAD:
-            case this.VERTICAL_ROAD:
-                return this.handleRoad(row, col, lastDirection);
-            case this.END_CHARACTER:
-                return { row, col, lastDirection: Direction.FINISH };
-            default:
-                return this.handleLetter(row, col, neighbors, lastDirection);
-        }
-    }
-
-    /**
-     * Walks the path from start to end.
-     * @returns visited coordinates and collected letters
-     */
-    private walkPath(): TypedProcessResult<PathResult> {
-        var lastDirection: Direction = Direction.START;
-        const visitedCoordinates: { row: number, col: number, character: string }[] = [];
-
-        for (let {row, col} = this.startPoint as {row: number, col: number}; lastDirection !== Direction.FINISH;) {
-            const currentCharacter = this.grid.getPoint(row, col);
-
-            visitedCoordinates.push({ row, col, character: currentCharacter });
-
-            const newValues = this.move(row, col, lastDirection);
-            
-            if (newValues.lastDirection === Direction.ERROR) {
-                return {
-                    isSuccessful: false,
-                    customData: {
-                        visitedCoordinates,
-                        collectedLetters: this.getCollectedLetters(visitedCoordinates)
-                    },
-                    errorDetails: {
-                        row: newValues.row,
-                        col: newValues.col,
-                        errorMessage: newValues.errorMessage || 'Invalid path'
-                    }
-                };
-            }
-
-            row = newValues.row;
-            col = newValues.col;
-            lastDirection = newValues.lastDirection;
-        }
-
-        const collectedLetters = this.getCollectedLetters(visitedCoordinates);
-
-        return { 
-            isSuccessful: true,
-            customData: {
-                visitedCoordinates,
-                collectedLetters
-            }
-        };
     }
 
     /**
@@ -617,15 +611,12 @@ export class Grid {
             return '';
         }
 
-        // grid is jagged matrix, so no need to return error
-        // because some rows may be shorter than others
         if (row >= this.grid.length || col >= this.grid[row].length) {
             return '';
         }
 
         return this.grid[row][col] === ' ' ? '' : this.grid[row][col];
     }
-
 
     /**
      * Get the neighbors of a point
@@ -710,5 +701,4 @@ export class Grid {
 
         return { isSuccessful: true };
     }
-    
 }

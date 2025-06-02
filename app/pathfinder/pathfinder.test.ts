@@ -71,12 +71,12 @@ describe('Pathfinder', () => {
             {
                 name: 'fail with missing end point',
                 file: 'invalid/missing-end.txt',
-                expectedError: 'Start or end point not found'
+                expectedError: 'End point not found'
             },
             {
                 name: 'fail with missing start point',
                 file: 'invalid/missing-start.txt',
-                expectedError: 'Start or end point not found'
+                expectedError: 'Start point not found'
             },
             {
                 name: 'fail with fake turn',
