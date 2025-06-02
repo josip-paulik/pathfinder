@@ -10,7 +10,9 @@ Key files for review:
 app/
 ├── pathfinder/
 │   ├── pathfinder.ts     # Core pathfinding logic
-│   └── pathfinder.test.ts # Test suite with all examples
+│   |── pathfinder.test.ts # Test suite with all examples
+│   |── grid.ts # Handling grid operations
+│   └── grid.test.ts # Handling grid testing
 ├── routes/
 │   └── home.tsx         # React UI implementation
 └── examples/            # Grid examples used in tests
