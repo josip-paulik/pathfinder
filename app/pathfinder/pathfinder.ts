@@ -54,6 +54,10 @@ export class Pathfinder {
     private readonly START_CHARACTER: string = '@';
     private readonly END_CHARACTER: string = 'x';
     private readonly VALID_GRID_CHARACTERS: RegExp = /[A-Z@x\+\-\|\s]/;
+    private readonly REQUIRED_START_NEIGHBORS = 1;
+    private readonly REQUIRED_TURN_NEIGHBORS = 2;
+    private readonly INVALID_HORIZONTAL_CONNECTION = this.VERTICAL_ROAD;
+    private readonly INVALID_VERTICAL_CONNECTION = this.HORIZONTAL_ROAD;
     private startPoint?: { row: number, col: number };
     private endPoint?: { row: number, col: number };
 
@@ -64,9 +68,32 @@ export class Pathfinder {
     }
 
     /**
-     * Finds the path on the grid.
-     * @returns result of the pathfinding process which includes visited coordinates and collected letters if the path is successful
-     * otherwise it includes error details
+     * Walks the path from start to end following these rules:
+     * 1. Start at '@' character
+     * 2. Follow valid connections:
+     *    - On roads, continue in the same direction
+     *    - Turns (+) must have exactly 2 valid connections and cannot be straight paths
+     *    - Letters (A-Z) can be traversed in any direction but must first try to maintain the current direction
+     * 3. Collect letters along the path (each letter only once)
+     * 4. End at 'x' character
+     * 
+     * Example valid path:
+     * ```
+     *    @---A---+
+     *            |
+     *            |
+     *            x
+     * ```
+     * 
+     * Example invalid path (turn is actually straight):
+     * ```
+     *    @---A---+---B
+     *            |
+     *            |
+     *            x
+     * ```
+     * 
+     * @returns ProcessResult with visited coordinates and collected letters if successful
      */
     public findPath(): TypedProcessResult<PathResult> {
         const setupResult = this.setup();
@@ -284,38 +311,47 @@ export class Pathfinder {
     }
 
     /**
-     * Check if the turn is valid.
-     * Turn must have exactly 2 roads coming into it.
-     * And it must not be a fake turn.
-     * @param turn 
-     * @returns true if the turn is valid, false otherwise
+     * Check if the turn is valid by verifying:
+     * 1. It must have exactly 2 valid connecting paths
+     * 2. Cannot be a straight path (must actually turn)
+     * 3. Must have compatible road types (vertical roads can't connect horizontally)
+     * 
+     * Examples:
+     * 
+     * Valid turn (L-shape):
+     * ```
+     *    ---+
+     *       |
+     *       |
+     * ```
+     * 
+     * Invalid turn (straight path):
+     * ```
+     *    ---+---
+     * ```
+     * 
+     * Invalid turn (T-junction):
+     * ```
+     *    ---+---
+     *       |
+     * ```
+     * 
+     * @param turn - The coordinates of the turn to check
+     * @returns ProcessResult indicating if the turn is valid
      */
     private checkTurn(turn: { row: number, col: number }): ProcessResult {
         const neighbors = this.grid.getNeighbors(turn.row, turn.col);
-
+        
+        // Count initial neighbors before validation
         let neighborsCount = Object.values(neighbors).filter(Boolean).length;
 
-        if (neighbors.up === this.HORIZONTAL_ROAD) {
-            neighbors.up = '';
-            neighborsCount--;
-        }
+        // Validate connection compatibility for each direction
+        if (this.hasInvalidUpwardConnection(neighbors)) neighborsCount--;
+        if (this.hasInvalidDownwardConnection(neighbors)) neighborsCount--;
+        if (this.hasInvalidLeftwardConnection(neighbors)) neighborsCount--;
+        if (this.hasInvalidRightwardConnection(neighbors)) neighborsCount--;
 
-        if (neighbors.down === this.HORIZONTAL_ROAD) {
-            neighbors.down = '';
-            neighborsCount--;
-        }
-
-        if (neighbors.left === this.VERTICAL_ROAD) {
-            neighbors.left = '';
-            neighborsCount--;
-        }
-        
-        if (neighbors.right === this.VERTICAL_ROAD) {
-            neighbors.right = '';
-            neighborsCount--;
-        }
-
-        if (neighborsCount !== 2) {
+        if (neighborsCount !== this.REQUIRED_TURN_NEIGHBORS) {
             return {
                 isSuccessful: false,
                 errorDetails: {
@@ -325,11 +361,12 @@ export class Pathfinder {
                 }
             };
         }
-            
-        const verticalStraight = neighbors.up && neighbors.down && !neighbors.left && !neighbors.right;
-        const horizontalStraight = !neighbors.up && !neighbors.down && neighbors.left && neighbors.right;
 
-        if (verticalStraight || horizontalStraight) {
+        // Check if it's a fake turn (straight path)
+        const isVerticalStraightPath = this.isVerticalStraightPath(neighbors);
+        const isHorizontalStraightPath = this.isHorizontalStraightPath(neighbors);
+
+        if (isVerticalStraightPath || isHorizontalStraightPath) {
             return {
                 isSuccessful: false,
                 errorDetails: {
@@ -478,13 +515,36 @@ export class Pathfinder {
     }
 
     /**
-     * Handles the letter. Tries to move in the last direction,
-     * if that is not possible, it tries to turn.
-     * @param row - row of the letter
-     * @param col - column of the letter
-     * @param neighbors - neighbors of the letter
-     * @param lastDirection - last direction of the move made
-     * @returns new values for row, col and last direction
+     * Handles movement through a letter tile. Letters are special because:
+     * 1. They can be traversed in any direction (unlike roads)
+     * 2. They must respect connecting road types
+     * 3. They are collected when traversed
+     * 4. They can act as turns
+     * 
+     * Examples:
+     * 
+     * Valid letter traversal (acts as connection):
+     * ```
+     *    ---A---
+     * ```
+     * 
+     * Valid letter traversal (acts as turn):
+     * ```
+     *    ---A
+     *       |
+     * ```
+     * 
+     * Invalid letter traversal (incompatible road type):
+     * ```
+     *    ---A
+     *       -
+     * ```
+     * 
+     * @param row - Current row position
+     * @param col - Current column position
+     * @param neighbors - Adjacent tiles
+     * @param lastDirection - Direction we came from
+     * @returns MovementResult with new position and direction
      */
     private handleLetter(
         row: number,
@@ -495,55 +555,56 @@ export class Pathfinder {
         const lastRow = row;
         const lastCol = col;
 
+        // Try to continue in same direction first, then try turning
         switch (lastDirection) {
             case Direction.UP:
-                if (neighbors.up && neighbors.up !== this.HORIZONTAL_ROAD) {
+                if (this.canMoveVertically(neighbors.up)) {
                     row--;
                 }
-                else if (neighbors.left && neighbors.left !== this.VERTICAL_ROAD) {
+                else if (this.canMoveHorizontally(neighbors.left)) {
                     lastDirection = Direction.LEFT;
                     col--;
                 }
-                else if (neighbors.right && neighbors.right !== this.VERTICAL_ROAD) {
+                else if (this.canMoveHorizontally(neighbors.right)) {
                     lastDirection = Direction.RIGHT;
                     col++;
                 }
                 break;
             case Direction.DOWN:
-                if (neighbors.down && neighbors.down !== this.HORIZONTAL_ROAD) {
+                if (this.canMoveVertically(neighbors.down)) {
                     row++;
                 }
-                else if (neighbors.left && neighbors.left !== this.VERTICAL_ROAD) {
+                else if (this.canMoveHorizontally(neighbors.left)) {
                     lastDirection = Direction.LEFT;
                     col--;
                 }
-                else if (neighbors.right && neighbors.right !== this.VERTICAL_ROAD) {
+                else if (this.canMoveHorizontally(neighbors.right)) {
                     lastDirection = Direction.RIGHT;
                     col++;
                 }
                 break;
             case Direction.LEFT:
-                if (neighbors.left && neighbors.left !== this.VERTICAL_ROAD) {
+                if (this.canMoveHorizontally(neighbors.left)) {
                     col--;
                 }
-                else if (neighbors.up && neighbors.up !== this.HORIZONTAL_ROAD) {
+                else if (this.canMoveVertically(neighbors.up)) {
                     lastDirection = Direction.UP;
                     row--;
                 }
-                else if (neighbors.down && neighbors.down !== this.HORIZONTAL_ROAD) {
+                else if (this.canMoveVertically(neighbors.down)) {
                     lastDirection = Direction.DOWN;
                     row++;
                 }
                 break;
             case Direction.RIGHT:
-                if (neighbors.right && neighbors.right !== this.VERTICAL_ROAD) {
+                if (this.canMoveHorizontally(neighbors.right)) {
                     col++;
                 }
-                else if (neighbors.up && neighbors.up !== this.HORIZONTAL_ROAD) {
+                else if (this.canMoveVertically(neighbors.up)) {
                     lastDirection = Direction.UP;
                     row--;
                 }
-                else if (neighbors.down && neighbors.down !== this.HORIZONTAL_ROAD) {
+                else if (this.canMoveVertically(neighbors.down)) {
                     lastDirection = Direction.DOWN;
                     row++;
                 }
@@ -557,7 +618,8 @@ export class Pathfinder {
                 };
         }
 
-        if (row === lastRow && col === lastCol) {
+        const isStuck = row === lastRow && col === lastCol;
+        if (isStuck) {
             return { 
                 row, 
                 col, 
@@ -567,6 +629,39 @@ export class Pathfinder {
         }
 
         return { row, col, lastDirection };
+    }
+
+    // Helper methods for readability
+    private hasInvalidUpwardConnection(neighbors: NeighborPoints): boolean {
+        return Boolean(neighbors.up && neighbors.up === this.INVALID_VERTICAL_CONNECTION);
+    }
+
+    private hasInvalidDownwardConnection(neighbors: NeighborPoints): boolean {
+        return Boolean(neighbors.down && neighbors.down === this.INVALID_VERTICAL_CONNECTION);
+    }
+
+    private hasInvalidLeftwardConnection(neighbors: NeighborPoints): boolean {
+        return Boolean(neighbors.left && neighbors.left === this.INVALID_HORIZONTAL_CONNECTION);
+    }
+
+    private hasInvalidRightwardConnection(neighbors: NeighborPoints): boolean {
+        return Boolean(neighbors.right && neighbors.right === this.INVALID_HORIZONTAL_CONNECTION);
+    }
+
+    private isVerticalStraightPath(neighbors: NeighborPoints): boolean {
+        return Boolean(neighbors.up && neighbors.down && !neighbors.left && !neighbors.right);
+    }
+
+    private isHorizontalStraightPath(neighbors: NeighborPoints): boolean {
+        return Boolean(!neighbors.up && !neighbors.down && neighbors.left && neighbors.right);
+    }
+
+    private canMoveVertically(neighbor: string): boolean {
+        return Boolean(neighbor && neighbor !== this.INVALID_VERTICAL_CONNECTION);
+    }
+
+    private canMoveHorizontally(neighbor: string): boolean {
+        return Boolean(neighbor && neighbor !== this.INVALID_HORIZONTAL_CONNECTION);
     }
 
     /**
