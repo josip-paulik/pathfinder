@@ -1,87 +1,102 @@
-# Welcome to React Router!
+# Pathfinder Challenge Solution
 
-A modern, production-ready template for building full-stack React applications using React Router.
+This is my solution to the Software Sauna [Code Challenge](https://github.com/softwaresauna/code-challenge). The solution is implemented as a React application with TypeScript, providing both a visual interface and comprehensive test coverage. For testing, Vitest was the chosen framework because of ease of setup.
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+## Project Structure
 
-## Features
+Key files for review:
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+```
+app/
+├── pathfinder/
+│   ├── pathfinder.ts     # Core pathfinding logic
+│   └── pathfinder.test.ts # Test suite with all examples
+├── routes/
+│   └── home.tsx         # React UI implementation
+└── examples/            # Grid examples used in tests
+```
+
+### Core Implementation Files
+
+- `app/pathfinder/pathfinder.ts`: Contains the main `Pathfinder` class that implements the path-finding algorithm. The class handles:
+  - Grid validation
+  - Path traversal
+  - Letter collection
+  - Error handling with detailed messages
+
+- `app/pathfinder/pathfinder.test.ts`: Comprehensive test suite covering:
+  - All valid examples from the challenge (ACB, ABCD, GOONIES, etc.)
+  - Invalid cases (multiple starts, missing end, broken paths, etc.)
+  - Edge cases and error conditions
+
+- `app/routes/home.tsx`: React component providing:
+  - Visual grid input interface
+  - Example grid buttons
+  - Animated path visualization
+  - Error display
+  - Dark mode support
 
 ## Getting Started
 
-### Installation
-
-Install the dependencies:
-
+1. Install dependencies:
 ```bash
 npm install
 ```
 
-### Development
-
-Start the development server with HMR:
-
+2. Run the development server:
 ```bash
 npm run dev
 ```
 
-Your application will be available at `http://localhost:5173`.
+3. Open [http://localhost:5173](http://localhost:5173) to view the application
 
-## Building for Production
+## Running Tests
 
-Create a production build:
-
+Run all tests:
 ```bash
-npm run build
+npm test
 ```
 
-## Deployment
-
-### Docker Deployment
-
-To build and run using Docker:
-
-```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
-```
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
 
 ```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
 
-## Styling
+## Implementation Details
 
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
+The solution follows these key principles:
 
----
+1. **Validation First**: The pathfinder validates the entire grid before attempting traversal:
+   - Checks for valid characters
+   - Verifies start/end points
 
-Built with ❤️ using React Router.
+2. **Clear Error Reporting**: When invalid paths are detected, the error messages include:
+   - Specific error type
+   - Row/column coordinates
+   - Detailed description
+
+3. **Efficient Path Finding**: The algorithm:
+   - Follows paths using direction tracking
+   - Collects uppercase letters
+   - Handles intersections and turns
+   - Stops at the first valid endpoint
+
+4. **Comprehensive Testing**: The test suite covers:
+   - Uses Vitest
+   - All example cases from the challenge
+   - Edge cases and error conditions
+   - Invalid grid configurations
+
+## Visual Interface
+
+The web interface provides:
+1. A textarea for grid input
+2. Pre-loaded example grids from the challenge
+3. Visual path animation
+4. Clear error messages
+5. Dark mode support
+
+## Additional Notes
+
+- The implementation strictly follows the challenge rules regarding valid characters and path rules
+- Error handling is comprehensive and user-friendly
+- The visual interface makes it easy to test different grid configurations
+- The code is written in TypeScript with full type safety

@@ -9,7 +9,7 @@ export enum Direction {
 }
 
 export type ProcessResult = {
-    resultSuccess: boolean;
+    isSuccessful: boolean;
     customData?: any;
     errorDetails?: {
         row?: number;
@@ -19,7 +19,7 @@ export type ProcessResult = {
 }
 
 export type TypedProcessResult<T> = {
-    resultSuccess: boolean;
+    isSuccessful: boolean;
     customData?: T;
     errorDetails?: {
         row?: number;
@@ -34,6 +34,13 @@ export type PathResult = {
 }
 
 export type CharacterProcess = (row: number, col: number) => ProcessResult;
+
+export type MovementResult = {
+    row: number;
+    col: number;
+    lastDirection: Direction;
+    errorMessage?: string;
+};
 
 /**
  * This class is responsible for finding the path on grid.
@@ -56,9 +63,14 @@ export class Pathfinder {
         this.grid = new Grid(gridParam);
     }
 
+    /**
+     * Finds the path on the grid.
+     * @returns result of the pathfinding process which includes visited coordinates and collected letters if the path is successful
+     * otherwise it includes error details
+     */
     public findPath(): TypedProcessResult<PathResult> {
         const setupResult = this.setup();
-        if (!setupResult.resultSuccess) {
+        if (!setupResult.isSuccessful) {
             return setupResult;
         }
         
@@ -76,17 +88,14 @@ export class Pathfinder {
         const characterProcesses = new Map<string, CharacterProcess>();
         characterProcesses.set(this.START_CHARACTER, (row, col) => {
             if (this.startPoint) {
-                return { resultSuccess: false, errorMessage: `There are more than one start points (${this.startPoint.row}, ${this.startPoint.col}) and (${row}, ${col})` };
+                return { isSuccessful: false, errorDetails: { errorMessage: `There are more than one start points.` } };
             }
             this.startPoint = { row, col };
             return this.isStartPointValid({ row, col });
         });
         characterProcesses.set(this.END_CHARACTER, (row, col) => {
             this.endPoint = { row, col };
-            return { resultSuccess: true };
-        });
-        characterProcesses.set(this.CROSSROAD, (row, col) => {
-            return { resultSuccess: this.checkCrossroad({ row, col }) };
+            return { isSuccessful: true };
         });
 
         const regExpProcesses = new Map<RegExp, CharacterProcess>();
@@ -107,9 +116,13 @@ export class Pathfinder {
 
         const result = this.grid.runGridProcessing(characterProcesses, regExpProcesses, this.VALID_GRID_CHARACTERS);
 
+        if (!result.isSuccessful) {
+            return result;
+        }
+
         if (!this.startPoint || !this.endPoint) {
             return {
-                resultSuccess: false,
+                isSuccessful: false,
                 errorDetails: {
                     errorMessage: 'Start or end point not found'
                 }
@@ -134,29 +147,34 @@ export class Pathfinder {
         // |@|
         //  | 
         // vertical roads to the left and right of @ are not the roads we can turn into
-        if (neighbors.up && neighbors.up === this.HORIZONTAL_ROAD) {
+        const cantGoUp = neighbors.up && neighbors.up === this.HORIZONTAL_ROAD;
+        const cantGoDown = neighbors.down && neighbors.down === this.HORIZONTAL_ROAD;
+        const cantGoLeft = neighbors.left && neighbors.left === this.VERTICAL_ROAD;
+        const cantGoRight = neighbors.right && neighbors.right === this.VERTICAL_ROAD;
+
+        if (cantGoUp) {
             neighbors.up = '';
             neighborsCount--;
         }
 
-        if (neighbors.down && neighbors.down === this.HORIZONTAL_ROAD) {
+        if (cantGoDown) {
             neighbors.down = '';
             neighborsCount--;
         }
 
-        if (neighbors.left && neighbors.left === this.VERTICAL_ROAD) {
+        if (cantGoLeft) {
             neighbors.left = '';
             neighborsCount--;
         }
 
-        if (neighbors.right && neighbors.right === this.VERTICAL_ROAD) {
+        if (cantGoRight) {
             neighbors.right = '';
             neighborsCount--;
         }
 
         if (neighborsCount !== 1) {
             return { 
-                resultSuccess: false, 
+                isSuccessful: false, 
                 errorDetails: { 
                     row: startPoint.row, 
                     col: startPoint.col, 
@@ -165,7 +183,7 @@ export class Pathfinder {
             };
         }
 
-        return { resultSuccess: true };
+        return { isSuccessful: true };
     }
 
     /**
@@ -211,14 +229,14 @@ export class Pathfinder {
             return false;
         }
             
-            // check for fake turns
-            if (neighbors.up && neighbors.down && !neighbors.left && !neighbors.right) {
-                return false;
-            }
+        // check for fake turns
 
-            if (!neighbors.up && !neighbors.down && neighbors.left && neighbors.right) {
-                return false;
-            }
+        const verticalStraight = neighbors.up && neighbors.down && !neighbors.left && !neighbors.right;
+        const horizontalStraight = !neighbors.up && !neighbors.down && neighbors.left && neighbors.right;
+
+        if (verticalStraight || horizontalStraight) {
+            return false;
+        }
 
         return true;
     }
@@ -234,7 +252,7 @@ export class Pathfinder {
         row: number,
         col: number,
         neighbors: NeighborPoints
-    ): { row: number, col: number, lastDirection: Direction } {
+    ): MovementResult {
         let lastDirection: Direction = Direction.START;
         if (neighbors.up) {
             lastDirection = Direction.UP;
@@ -265,12 +283,20 @@ export class Pathfinder {
         col: number,
         neighbors: NeighborPoints,
         lastDirection: Direction,
-    ): { row: number, col: number, lastDirection: Direction } {
-        console.log('handleTurn', row, col, neighbors, lastDirection);
+    ): MovementResult {
+        const crossroadValidity = this.checkCrossroad({ row, col });
+        if (!crossroadValidity) {
+            return { 
+                row, 
+                col, 
+                lastDirection: Direction.ERROR,
+                errorMessage: 'Invalid turn: must have exactly two connecting paths and cannot be a straight path or a fork'
+            };
+        }
+
         const lastRow = row;
         const lastCol = col;
-        // here we can safetly assume that turn is valid
-        // and we only need to check into which direction we can turn
+        
         switch (lastDirection) {
             case Direction.UP:
             case Direction.DOWN:
@@ -298,7 +324,12 @@ export class Pathfinder {
 
         // in case we can't turn anywhere, we are stuck
         if (row === lastRow && col === lastCol) {
-            return { row, col, lastDirection: Direction.ERROR };
+            return { 
+                row, 
+                col, 
+                lastDirection: Direction.ERROR,
+                errorMessage: 'No valid path found at turn'
+            };
         }
 
         return { row, col, lastDirection };
@@ -316,35 +347,60 @@ export class Pathfinder {
         row: number,
         col: number,
         lastDirection: Direction
-    ): { row: number, col: number, lastDirection: Direction } {
+    ): MovementResult {
         const neighbors = this.grid.getNeighbors(row, col);
         switch (lastDirection) {
             case Direction.UP:
                 if (!neighbors.up) {
-                    return { row, col, lastDirection: Direction.ERROR };
+                    return { 
+                        row, 
+                        col, 
+                        lastDirection: Direction.ERROR,
+                        errorMessage: 'Cannot continue upward: path ends unexpectedly'
+                    };
                 }
                 row--;
                 break;
             case Direction.DOWN:
                 if (!neighbors.down) {
-                    return { row, col, lastDirection: Direction.ERROR };
+                    return { 
+                        row, 
+                        col, 
+                        lastDirection: Direction.ERROR,
+                        errorMessage: 'Cannot continue downward: path ends unexpectedly'
+                    };
                 }
                 row++;
                 break;
             case Direction.LEFT:
                 if (!neighbors.left) {
-                    return { row, col, lastDirection: Direction.ERROR };
+                    return { 
+                        row, 
+                        col, 
+                        lastDirection: Direction.ERROR,
+                        errorMessage: 'Cannot continue left: path ends unexpectedly'
+                    };
                 }
                 col--;
                 break;
             case Direction.RIGHT:
                 if (!neighbors.right) {
-                    return { row, col, lastDirection: Direction.ERROR };
+                    return { 
+                        row, 
+                        col, 
+                        lastDirection: Direction.ERROR,
+                        errorMessage: 'Cannot continue right: path ends unexpectedly'
+                    };
                 }
                 col++;
                 break;
             default:
-                return { row, col, lastDirection: Direction.ERROR };
+                return { 
+                    row, 
+                    col, 
+                    lastDirection: Direction.ERROR,
+                    errorMessage: 'Invalid direction for road'
+                };
         }
         return { row, col, lastDirection };
     }
@@ -355,7 +411,7 @@ export class Pathfinder {
      * @param row - row of the letter
      * @param col - column of the letter
      * @param neighbors - neighbors of the letter
-     * @param lastDirection - last direction
+     * @param lastDirection - last direction of the move made
      * @returns new values for row, col and last direction
      */
     private handleLetter(
@@ -363,9 +419,10 @@ export class Pathfinder {
         col: number,
         neighbors: NeighborPoints,
         lastDirection: Direction,
-    ): { row: number, col: number, lastDirection: Direction } {
+    ): MovementResult {
         const lastRow = row;
         const lastCol = col;
+
         switch (lastDirection) {
             case Direction.UP:
                 if (neighbors.up && neighbors.up !== this.HORIZONTAL_ROAD) {
@@ -420,12 +477,22 @@ export class Pathfinder {
                 }
                 break;
             default:
-                return { row, col, lastDirection: Direction.ERROR };
+                return { 
+                    row, 
+                    col, 
+                    lastDirection: Direction.ERROR,
+                    errorMessage: 'Invalid direction for letter'
+                };
         }
 
         // in case we can't move anywhere, we are stuck
         if (row === lastRow && col === lastCol) {
-            return { row, col, lastDirection: Direction.ERROR };
+            return { 
+                row, 
+                col, 
+                lastDirection: Direction.ERROR,
+                errorMessage: 'No valid path found at letter'
+            };
         }
 
         return { row, col, lastDirection };
@@ -443,7 +510,7 @@ export class Pathfinder {
         row: number,
         col: number,
         lastDirection: Direction
-    ): { row: number, col: number, lastDirection: Direction } {
+    ): MovementResult {
         const currentCharacter = this.grid.getPoint(row, col);
         const neighbors = this.grid.getNeighbors(row, col);
         
@@ -452,11 +519,11 @@ export class Pathfinder {
                 return this.handleStartCharacter(row, col, neighbors);
             case this.CROSSROAD:
                 return this.handleTurn(row, col, neighbors, lastDirection);
-            case this.END_CHARACTER:
-                return { row, col, lastDirection: Direction.FINISH };
             case this.HORIZONTAL_ROAD:
             case this.VERTICAL_ROAD:
                 return this.handleRoad(row, col, lastDirection);
+            case this.END_CHARACTER:
+                return { row, col, lastDirection: Direction.FINISH };
             default:
                 return this.handleLetter(row, col, neighbors, lastDirection);
         }
@@ -476,30 +543,31 @@ export class Pathfinder {
             visitedCoordinates.push({ row, col, character: currentCharacter });
 
             const newValues = this.move(row, col, lastDirection);
-            row = newValues.row;
-            col = newValues.col;
-            lastDirection = newValues.lastDirection;
             
-            if (lastDirection === Direction.ERROR) {
+            if (newValues.lastDirection === Direction.ERROR) {
                 return {
-                    resultSuccess: false,
+                    isSuccessful: false,
                     customData: {
                         visitedCoordinates,
                         collectedLetters: this.getCollectedLetters(visitedCoordinates)
                     },
                     errorDetails: {
-                        row: row,
-                        col: col,
-                        errorMessage: 'Invalid path'
+                        row: newValues.row,
+                        col: newValues.col,
+                        errorMessage: newValues.errorMessage || 'Invalid path'
                     }
                 };
             }
+
+            row = newValues.row;
+            col = newValues.col;
+            lastDirection = newValues.lastDirection;
         }
 
         const collectedLetters = this.getCollectedLetters(visitedCoordinates);
 
         return { 
-            resultSuccess: true,
+            isSuccessful: true,
             customData: {
                 visitedCoordinates,
                 collectedLetters
@@ -601,21 +669,21 @@ export class Grid {
                 if (!validCharacters.test(character)) {
                     console.log('invalid character', character);
                     return { 
-                        resultSuccess: false, 
+                        isSuccessful: false, 
                         errorDetails: { 
                             row, 
                             col, 
-                            errorMessage: `Invalid character: ${character}` 
+                            errorMessage: `Invalid character found: ${character}` 
                         } 
                     };
                 }
 
                 if (characterProcesses.has(character)) {
                     const result = characterProcesses.get(character)?.(row, col);
-                    if (!result?.resultSuccess) {
+                    if (!result?.isSuccessful) {
                         console.log('invalid character', character, result?.errorDetails);
                         return { 
-                            resultSuccess: false, 
+                            isSuccessful: false, 
                             errorDetails: result?.errorDetails 
                         };
                     }
@@ -625,13 +693,13 @@ export class Grid {
                 for (const regExp of regExpProcesses.keys()) {
                     if (regExp.test(character)) {
                         const result = regExpProcesses.get(regExp)?.(row, col);
-                        if (!result?.resultSuccess) {
+                        if (!result?.isSuccessful) {
                             return { 
-                                resultSuccess: false, 
+                                isSuccessful: false, 
                                 errorDetails: { 
                                     row, 
                                     col, 
-                                    errorMessage: `Invalid character: ${character}` 
+                                    errorMessage: `Validation failed for: ${character}` 
                                 } 
                             };
                         }
@@ -640,7 +708,7 @@ export class Grid {
             }
         }
 
-        return { resultSuccess: true };
+        return { isSuccessful: true };
     }
     
 }

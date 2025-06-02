@@ -54,4 +54,64 @@ x-B-+   |
        |
        +-B--x-C--D`
     }
+];
+
+export const INVALID_EXAMPLES: GridExample[] = [
+    {
+        name: "Multiple start points",
+        grid: `@--A-@-+
+       |
+ x-B-+ C
+     | |
+     +-+`
+    },
+    {
+        name: "Missing end point",
+        grid: `@--A---+
+       |
+ B-+   C
+   |   |
+   +---+`
+    },
+    {
+        name: "Missing start point",
+        grid: `---A---+
+       |
+x-B-+  C
+    |  |
+    +--+`
+    },
+    {
+        name: "Fake turn",
+        grid: `@-A-+-B-x`
+    },
+    {
+        name: "Broken path",
+        grid: `@--A-+
+     |
+
+     B-x`
+    },
+    {
+        name: "Fork in path",
+        grid: `       x-B
+         |
+  @--A---+
+         |
+    x+   C
+     |   |
+     +---+`
+    },
+    {
+        name: "Multiple starting paths",
+        grid: `x-B-@-A-x`
+    },
+    {
+        name: "Invalid character",
+        grid: `@--A--?--+
+         |
+     +---B
+     |
+     x`
+    }
 ]; 
