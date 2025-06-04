@@ -172,7 +172,7 @@ describe('Pathfinder Movement Tests', () => {
                 name: 'should reject turn with more than 2 connections',
                 grid: [
                     ['-', '+', '-'],
-                    ['', '|', ''],
+                    [' ', '|',],
                 ],
                 row: 0,
                 col: 1,
@@ -302,16 +302,17 @@ describe('Pathfinder Movement Tests', () => {
             {
                 name: 'tryContinueDirection should find valid continuance in direction',
                 grid: [
+                    [' ', '|'],
                     [' ', 'A'],
                     ['-', '-', '-'],
                     [' ', 'B'],
                 ],
-                row: 0,
+                row: 1,
                 col: 1,
                 direction: Direction.DOWN,
                 method: 'tryContinueDirection' as TestablePathfinderMethod,
                 expected: {
-                    row: 1,
+                    row: 2,
                     col: 1,
                     lastDirection: Direction.DOWN
                 }
@@ -586,9 +587,9 @@ describe('Pathfinder Movement Tests', () => {
             {
                 name: 'should not identify point with 3 connections as intersection',
                 grid: [
-                    ['', '|', ''],
-                    ['-', '+', ''],
-                    ['', '|', ''],
+                    [' ', '|', ' '],
+                    ['-', '|', '|'],
+                    [' ', '|', ' '],
                 ],
                 row: 1,
                 col: 1,
@@ -597,9 +598,9 @@ describe('Pathfinder Movement Tests', () => {
             {
                 name: 'should not identify point with incompatible roads as intersection',
                 grid: [
-                    ['', '-', ''],
-                    ['-', '+', '-'],
-                    ['', '|', ''],
+                    [' ', '-', ' '],
+                    ['-', '|', '-'],
+                    [' ', '|', ' '],
                 ],
                 row: 1,
                 col: 1,
