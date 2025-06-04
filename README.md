@@ -10,9 +10,11 @@ Key files for review:
 app/
 ├── pathfinder/
 │   ├── pathfinder.ts     # Core pathfinding logic
-│   |── pathfinder.test.ts # Test suite with all examples
 │   |── grid.ts # Handling grid operations
-│   └── grid.test.ts # Handling grid testing
+|   └-─ tests
+|         ├── grid.test.ts # Grid related tests for its operations
+|         ├── pathfinder.test.ts # Integration tests for invalid and valid paths
+|         └── pathfinderMovement.test.ts # Unit tests testing micro movements on the grid
 ├── routes/
 │   └── home.tsx         # React UI implementation
 └── examples/            # Grid examples used in tests
@@ -26,9 +28,13 @@ app/
   - Letter collection
   - Error handling with detailed messages
 
-- `app/pathfinder/pathfinder.test.ts`: Comprehensive test suite covering:
+- `app/pathfinder/tests/pathfinder.test.ts`: Comprehensive test suite covering:
   - All valid examples from the challenge (ACB, ABCD, GOONIES, etc.)
   - Invalid cases (multiple starts, missing end, broken paths, etc.)
+  - Edge cases and error conditions
+  - 
+- `app/pathfinder/tests/pathfinderMovement.test.ts`: Comprehensive test suite covering:
+  - All possible cases for each character and how the movement should be handled on each character
   - Edge cases and error conditions
  
 - `app/pathfinder/grid.ts`: Contains the main `Grid` class that handles various grid operations. The class handles:
