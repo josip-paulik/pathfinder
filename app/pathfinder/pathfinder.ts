@@ -48,20 +48,18 @@ export type MovementResult = {
  * This class is responsible for finding the path on grid.
  */
 export class Pathfinder {
-    private readonly grid: Grid;
-    private readonly HORIZONTAL_ROAD: string = '-';
-    private readonly VERTICAL_ROAD: string = '|';
-    private readonly CROSSROAD: string = '+';
-    private readonly UPPERCASE_ALPHABET: RegExp = /[A-Z]/;
-    private readonly START_CHARACTER: string = '@';
-    private readonly END_CHARACTER: string = 'x';
-    private readonly VALID_GRID_CHARACTERS: RegExp = /[A-Z@x\+\-\|\s]/;
-    private readonly REQUIRED_START_NEIGHBORS = 1;
-    private readonly REQUIRED_TURN_NEIGHBORS = 2;
-    private readonly INVALID_HORIZONTAL_CONNECTION = this.VERTICAL_ROAD;
-    private readonly INVALID_VERTICAL_CONNECTION = this.HORIZONTAL_ROAD;
-    private startPoint?: { row: number, col: number };
-    private endPoint?: { row: number, col: number };
+    protected readonly grid: Grid;
+    protected readonly HORIZONTAL_ROAD: string = '-';
+    protected readonly VERTICAL_ROAD: string = '|';
+    protected readonly CROSSROAD: string = '+';
+    protected readonly UPPERCASE_ALPHABET: RegExp = /[A-Z]/;
+    protected readonly START_CHARACTER: string = '@';
+    protected readonly END_CHARACTER: string = 'x';
+    protected readonly VALID_GRID_CHARACTERS: RegExp = /[A-Z@x\+\-\|\s]/;
+    protected readonly REQUIRED_START_NEIGHBORS = 1;
+    protected readonly REQUIRED_TURN_NEIGHBORS = 2;
+    protected startPoint?: { row: number, col: number };
+    protected endPoint?: { row: number, col: number };
 
     constructor(
         gridParam: string[][],
@@ -141,18 +139,24 @@ export class Pathfinder {
      */
     private setupProcesses(): {characterProcesses: Map<string, CharacterProcess>, regExpProcesses: Map<RegExp, CharacterProcess>} {
         const characterProcesses = new Map<string, CharacterProcess>();
+
+        // checks if there is only one start point and that it is valid
         characterProcesses.set(this.START_CHARACTER, (row, col) => {
             if (this.startPoint) {
                 return { isSuccessful: false, errorDetails: { errorMessage: `There are more than one start points.` } };
             }
             this.startPoint = { row, col };
-            return this.isStartPointValid({ row, col });
+            return this.isStartPointValid(row, col);
         });
+
+        // sets the end point, so we now there is at least one
         characterProcesses.set(this.END_CHARACTER, (row, col) => {
             this.endPoint = { row, col };
             return { isSuccessful: true };
         });
 
+        // altough we don't need any regular expressions for this task,
+        // I want to keep the if any processing is needed later
         const regExpProcesses = new Map<RegExp, CharacterProcess>();
         return {characterProcesses, regExpProcesses};
     }
@@ -163,37 +167,38 @@ export class Pathfinder {
      * @param startPoint 
      * @returns true if the start point is valid, false otherwise
      */
-    private isStartPointValid(startPoint: { row: number, col: number }): ProcessResult {
-        const neighbors = this.grid.getNeighbors(startPoint.row, startPoint.col);
+    private isStartPointValid(row: number, col: number): ProcessResult {
+        const neighbors = this.grid.getNeighbors(row, col);
         let neighborsCount = Object.values(neighbors).filter(Boolean).length;
 
-        if (this.hasInvalidUpwardConnection(neighbors)) {
+        // check for neighbors we can't move to
+        if (neighbors.up && !this.canMoveUp(row, col)) {
             neighbors.up = '';
             neighborsCount--;
         }
 
-        if (this.hasInvalidDownwardConnection(neighbors)) {
+        if (neighbors.down && !this.canMoveDown(row, col)) {
             neighbors.down = '';
             neighborsCount--;
         }
 
-        if (this.hasInvalidLeftwardConnection(neighbors)) {
+        if (neighbors.left && !this.canMoveLeft(row, col)) {
             neighbors.left = '';
             neighborsCount--;
         }
 
-        if (this.hasInvalidRightwardConnection(neighbors)) {
+        if (neighbors.right && !this.canMoveRight(row, col)) {
             neighbors.right = '';
             neighborsCount--;
         }
 
-        if (neighborsCount !== 1) {
+        if (neighborsCount !== this.REQUIRED_START_NEIGHBORS) {
             return { 
                 isSuccessful: false, 
                 errorDetails: { 
-                    row: startPoint.row, 
-                    col: startPoint.col, 
-                    errorMessage: `Start point (${startPoint.row}, ${startPoint.col}) has ${neighborsCount} neighbors, but it must have exactly 1.` 
+                    row, 
+                    col, 
+                    errorMessage: `Start point (${row}, ${col}) has ${neighborsCount} neighbors, but it must have exactly ${this.REQUIRED_START_NEIGHBORS}.` 
                 } 
             };
         }
@@ -261,20 +266,19 @@ export class Pathfinder {
         lastDirection: Direction
     ): MovementResult {
         const currentCharacter = this.grid.getPoint(row, col);
-        const neighbors = this.grid.getNeighbors(row, col);
         
         switch (currentCharacter) {
             case this.START_CHARACTER:
-                return this.handleStartCharacter(row, col, neighbors);
+                return this.handleStartCharacter(row, col);
             case this.CROSSROAD:
-                return this.handleTurn(row, col, neighbors, lastDirection);
+                return this.handleTurn(row, col, lastDirection);
             case this.HORIZONTAL_ROAD:
             case this.VERTICAL_ROAD:
                 return this.handleRoad(row, col, lastDirection);
             case this.END_CHARACTER:
                 return { row, col, lastDirection: Direction.FINISH };
             default:
-                return this.handleLetter(row, col, neighbors, lastDirection);
+                return this.handleLetter(row, col, lastDirection);
         }
     }
 
@@ -282,29 +286,84 @@ export class Pathfinder {
      * Handles the start character.
      * @param row - row of the start character
      * @param col - column of the start character
-     * @param neighbors - neighbors of the start character
      * @returns new values for row, col and last direction
      */
-    private handleStartCharacter(
+    protected handleStartCharacter(
         row: number,
         col: number,
-        neighbors: NeighborPoints
     ): MovementResult {
+        return this.getStartingMove(row, col);
+    }
+
+    /**
+     * Gets the starting move for the start character.
+     * @param row - row of the start character
+     * @param col - column of the start character
+     * @returns new values for row, col and last direction if a move is possible
+     */
+    protected getStartingMove(row: number, col: number): MovementResult {
         let lastDirection: Direction = Direction.START;
-        if (neighbors.up) {
+        if (this.canMoveUp(row, col)) {
             lastDirection = Direction.UP;
             row--;
-        } else if (neighbors.down) {
+        } else if (this.canMoveDown(row, col)) {
             lastDirection = Direction.DOWN;
             row++;
-        } else if (neighbors.left) {
+        } else if (this.canMoveLeft(row, col)) {
             lastDirection = Direction.LEFT;
             col--;
-        } else if (neighbors.right) {
+        } else if (this.canMoveRight(row, col)) {
             lastDirection = Direction.RIGHT;
             col++;
         }
+
+        if (lastDirection === Direction.START) {
+            return {
+                row,
+                col,
+                lastDirection: Direction.ERROR,
+                errorMessage: 'No valid path found at start'
+            };
+        }
+
         return { row, col, lastDirection };
+    }
+
+    /**
+     * Handles the crossroad.
+     * @param row - row of the crossroad
+     * @param col - column of the crossroad
+     * @param neighbors - neighbors of the crossroad
+     * @param lastDirection - last direction
+     * @returns new values for row, col and last direction
+     */
+    protected handleTurn(
+        row: number,
+        col: number,
+        lastDirection: Direction,
+    ): MovementResult {
+        const turnValidity = this.checkTurn(row, col);
+        if (!turnValidity.isSuccessful) {
+            return { 
+                row, 
+                col, 
+                lastDirection: Direction.ERROR,
+                errorMessage: turnValidity.errorDetails?.errorMessage || 'Invalid turn'
+            };
+        }
+
+        const nextMove = this.getNextTurnMove(row, col, lastDirection);
+        
+        if (nextMove.lastDirection === Direction.ERROR) {
+            return { 
+                row, 
+                col, 
+                lastDirection: Direction.ERROR,
+                errorMessage: 'No valid path found at turn'
+            };
+        }
+
+        return nextMove;
     }
 
     /**
@@ -336,24 +395,24 @@ export class Pathfinder {
      * @param turn - The coordinates of the turn to check
      * @returns ProcessResult indicating if the turn is valid
      */
-    private checkTurn(turn: { row: number, col: number }): ProcessResult {
-        const neighbors = this.grid.getNeighbors(turn.row, turn.col);
+    protected checkTurn(row: number, col: number): ProcessResult {
+        const neighbors = this.grid.getNeighbors(row, col);
         
         // Count initial neighbors before validation
         let neighborsCount = Object.values(neighbors).filter(Boolean).length;
 
-        // Validate connection compatibility for each direction
-        if (this.hasInvalidUpwardConnection(neighbors)) neighborsCount--;
-        if (this.hasInvalidDownwardConnection(neighbors)) neighborsCount--;
-        if (this.hasInvalidLeftwardConnection(neighbors)) neighborsCount--;
-        if (this.hasInvalidRightwardConnection(neighbors)) neighborsCount--;
+        // Eliminate fake neighbors
+        if (neighbors.up && !this.canMoveUp(row, col)) neighborsCount--;
+        if (neighbors.down && !this.canMoveDown(row, col)) neighborsCount--;
+        if (neighbors.left && !this.canMoveLeft(row, col)) neighborsCount--;
+        if (neighbors.right && !this.canMoveRight(row, col)) neighborsCount--;
 
         if (neighborsCount !== this.REQUIRED_TURN_NEIGHBORS) {
             return {
                 isSuccessful: false,
                 errorDetails: {
-                    row: turn.row,
-                    col: turn.col,
+                    row,
+                    col,
                     errorMessage: 'Turn must have exactly 2 roads coming into it'
                 }
             };
@@ -367,52 +426,14 @@ export class Pathfinder {
             return {
                 isSuccessful: false,
                 errorDetails: {
-                    row: turn.row,
-                    col: turn.col,
-                    errorMessage: 'Turn must not be a straight path or a fork'
+                    row,
+                    col,
+                    errorMessage: 'Turn must not be a straight path'
                 }
             };
         }
 
         return { isSuccessful: true };
-    }
-
-    /**
-     * Handles the crossroad.
-     * @param row - row of the crossroad
-     * @param col - column of the crossroad
-     * @param neighbors - neighbors of the crossroad
-     * @param lastDirection - last direction
-     * @returns new values for row, col and last direction
-     */
-    private handleTurn(
-        row: number,
-        col: number,
-        neighbors: NeighborPoints,
-        lastDirection: Direction,
-    ): MovementResult {
-        const turnValidity = this.checkTurn({ row, col });
-        if (!turnValidity.isSuccessful) {
-            return { 
-                row, 
-                col, 
-                lastDirection: Direction.ERROR,
-                errorMessage: turnValidity.errorDetails?.errorMessage || 'Invalid turn'
-            };
-        }
-
-        const nextMove = this.getNextTurnMove({ row, col }, neighbors, lastDirection);
-        
-        if (nextMove.lastDirection === Direction.ERROR) {
-            return { 
-                row, 
-                col, 
-                lastDirection: Direction.ERROR,
-                errorMessage: 'No valid path found at turn'
-            };
-        }
-
-        return nextMove;
     }
 
     /**
@@ -436,21 +457,20 @@ export class Pathfinder {
      * @param direction - Current direction of movement
      * @returns MovementResult with new position and direction
      */
-    private getNextTurnMove(
-        position: { row: number, col: number },
-        neighbors: NeighborPoints,
+    protected getNextTurnMove(
+        row: number,
+        col: number,
         direction: Direction
     ): MovementResult {
-        const { row, col } = position;
         
         switch (direction) {
             case Direction.UP:
             case Direction.DOWN:
                 // Must turn left or right
-                if (neighbors.left) {
+                if (this.canMoveLeft(row, col)) {
                     return { row, col: col - 1, lastDirection: Direction.LEFT };
                 }
-                if (neighbors.right) {
+                if (this.canMoveRight(row, col)) {
                     return { row, col: col + 1, lastDirection: Direction.RIGHT };
                 }
                 break;
@@ -458,10 +478,10 @@ export class Pathfinder {
             case Direction.LEFT:
             case Direction.RIGHT:
                 // Must turn up or down
-                if (neighbors.up) {
+                if (this.canMoveUp(row, col)) {
                     return { row: row - 1, col, lastDirection: Direction.UP };
                 }
-                if (neighbors.down) {
+                if (this.canMoveDown(row, col)) {
                     return { row: row + 1, col, lastDirection: Direction.DOWN };
                 }
                 break;
@@ -490,13 +510,12 @@ export class Pathfinder {
      * @param lastDirection - last direction
      * @returns new values for row, col and last direction
      */
-    private handleRoad(
+    protected handleRoad(
         row: number,
         col: number,
         lastDirection: Direction
     ): MovementResult {
-        const neighbors = this.grid.getNeighbors(row, col);
-        return this.getNextRoadMove({ row, col }, neighbors, lastDirection);
+        return this.getNextRoadMove(row, col, lastDirection);
     }
 
     /**
@@ -505,19 +524,17 @@ export class Pathfinder {
      * 
      * @param position - Current position
      * @param neighbors - Adjacent tiles
-     * @param direction - Current direction of movement
+     * @param lastDirection - Current direction of movement
      * @returns MovementResult with new position and direction, or error if can't continue
      */
-    private getNextRoadMove(
-        position: { row: number, col: number },
-        neighbors: NeighborPoints,
-        direction: Direction
+    protected getNextRoadMove(
+        row: number,
+        col: number,
+        lastDirection: Direction
     ): MovementResult {
-        const { row, col } = position;
-
-        switch (direction) {
+        switch (lastDirection) {
             case Direction.UP:
-                if (!neighbors.up) {
+                if (!this.canMoveUp(row, col)) {
                     return { 
                         row, 
                         col, 
@@ -525,10 +542,10 @@ export class Pathfinder {
                         errorMessage: 'Cannot continue upward: path ends unexpectedly'
                     };
                 }
-                return { row: row - 1, col, lastDirection: direction };
+                return { row: row - 1, col, lastDirection: lastDirection };
 
             case Direction.DOWN:
-                if (!neighbors.down) {
+                if (!this.canMoveDown(row, col)) {
                     return { 
                         row, 
                         col, 
@@ -536,10 +553,10 @@ export class Pathfinder {
                         errorMessage: 'Cannot continue downward: path ends unexpectedly'
                     };
                 }
-                return { row: row + 1, col, lastDirection: direction };
+                return { row: row + 1, col, lastDirection: lastDirection };
 
             case Direction.LEFT:
-                if (!neighbors.left) {
+                if (!this.canMoveLeft(row, col)) {
                     return { 
                         row, 
                         col, 
@@ -547,10 +564,10 @@ export class Pathfinder {
                         errorMessage: 'Cannot continue left: path ends unexpectedly'
                     };
                 }
-                return { row, col: col - 1, lastDirection: direction };
+                return { row, col: col - 1, lastDirection: lastDirection };
 
             case Direction.RIGHT:
-                if (!neighbors.right) {
+                if (!this.canMoveRight(row, col)) {
                     return { 
                         row, 
                         col, 
@@ -558,7 +575,7 @@ export class Pathfinder {
                         errorMessage: 'Cannot continue right: path ends unexpectedly'
                     };
                 }
-                return { row, col: col + 1, lastDirection: direction };
+                return { row, col: col + 1, lastDirection: lastDirection };
 
             default:
                 return { 
@@ -583,18 +600,17 @@ export class Pathfinder {
      * @param lastDirection - Direction we came from
      * @returns MovementResult with new position and direction
      */
-    private handleLetter(
+    protected handleLetter(
         row: number,
         col: number,
-        neighbors: NeighborPoints,
         lastDirection: Direction,
     ): MovementResult {
-        const position = { row, col };
-        const nextMove = this.getNextLetterMove(position, neighbors, lastDirection);
+        const nextMove = this.getNextLetterMove(row, col, lastDirection);
 
         if (nextMove.lastDirection === Direction.ERROR) {
             return {
-                ...position,
+                row,
+                col,
                 lastDirection: Direction.ERROR,
                 errorMessage: 'No valid path found at letter'
             };
@@ -608,89 +624,101 @@ export class Pathfinder {
      * 1. First trying to continue in the current direction
      * 2. Then trying to turn if continuing is not possible
      */
-    private getNextLetterMove(
-        position: { row: number, col: number },
-        neighbors: NeighborPoints,
+    protected getNextLetterMove(
+        row: number,
+        col: number,
         lastDirection: Direction
     ): MovementResult {
         // Try to continue in the same direction first
-        const continuedMove = this.tryContinueDirection(position, neighbors, lastDirection);
+        const continuedMove = this.tryContinueDirection(row, col, lastDirection);
         if (continuedMove.lastDirection !== Direction.ERROR) {
             return continuedMove;
         }
 
         // If can't continue, try to turn
-        const turnedMove = this.tryTurnFromDirection(position, neighbors, lastDirection);
+        const turnedMove = this.tryTurnFromDirection(row, col, lastDirection);
         if (turnedMove.lastDirection !== Direction.ERROR) {
             return turnedMove;
         }
 
         return {
-            ...position,
+            row,
+            col,
             lastDirection: Direction.ERROR
         };
     }
 
     /**
      * Attempts to continue moving in the current direction from a letter tile
+     * @param row - row of the letter
+     * @param col - column of the letter
+     * @param lastDirection - direction to continue in
+     * @returns MovementResult with new position and direction
      */
-    private tryContinueDirection(
-        position: { row: number, col: number },
-        neighbors: NeighborPoints,
-        direction: Direction
+    protected tryContinueDirection(
+        row: number,
+        col: number,
+        lastDirection: Direction
     ): MovementResult {
-        const { row, col } = position;
-
-        switch (direction) {
+        switch (lastDirection) {
             case Direction.UP:
-                return this.canMoveVertically(neighbors.up)
-                    ? { row: row - 1, col, lastDirection: direction }
-                    : { row, col, lastDirection: Direction.ERROR };
+                if (this.canMoveUp(row, col)) {
+                    return { row: row - 1, col, lastDirection: lastDirection };
+                }
+                break;
             case Direction.DOWN:
-                return this.canMoveVertically(neighbors.down)
-                    ? { row: row + 1, col, lastDirection: direction }
-                    : { row, col, lastDirection: Direction.ERROR };
+                if (this.canMoveDown(row, col)) {
+                    return { row: row + 1, col, lastDirection: lastDirection };
+                }
+                break;
             case Direction.LEFT:
-                return this.canMoveHorizontally(neighbors.left)
-                    ? { row, col: col - 1, lastDirection: direction }
-                    : { row, col, lastDirection: Direction.ERROR };
+                if (this.canMoveLeft(row, col)) {
+                    return { row, col: col - 1, lastDirection: lastDirection };
+                }
+                break;
             case Direction.RIGHT:
-                return this.canMoveHorizontally(neighbors.right)
-                    ? { row, col: col + 1, lastDirection: direction }
-                    : { row, col, lastDirection: Direction.ERROR };
+                if (this.canMoveRight(row, col)) {
+                    return { row, col: col + 1, lastDirection: lastDirection };
+                }
+                break;
             default:
                 return { row, col, lastDirection: Direction.ERROR };
         }
+
+        return { row, col, lastDirection: Direction.ERROR };
     }
 
     /**
      * Attempts to turn from the current direction at a letter tile
+     * @param row - row of the letter
+     * @param col - column of the letter
+     * @param lastDirection - current direction
+     * @returns MovementResult with new position and direction
      */
-    private tryTurnFromDirection(
-        position: { row: number, col: number },
-        neighbors: NeighborPoints,
-        direction: Direction
+    protected tryTurnFromDirection(
+        row: number,
+        col: number,
+        lastDirection: Direction
     ): MovementResult {
-        const { row, col } = position;
-
-        switch (direction) {
+        switch (lastDirection) {
             case Direction.UP:
             case Direction.DOWN:
+
                 // Try turning left or right
-                if (this.canMoveHorizontally(neighbors.left)) {
+                if (this.canMoveLeft(row, col)) {
                     return { row, col: col - 1, lastDirection: Direction.LEFT };
                 }
-                if (this.canMoveHorizontally(neighbors.right)) {
+                if (this.canMoveRight(row, col)) {
                     return { row, col: col + 1, lastDirection: Direction.RIGHT };
                 }
                 break;
             case Direction.LEFT:
             case Direction.RIGHT:
                 // Try turning up or down
-                if (this.canMoveVertically(neighbors.up)) {
+                if (this.canMoveUp(row, col)) {
                     return { row: row - 1, col, lastDirection: Direction.UP };
                 }
-                if (this.canMoveVertically(neighbors.down)) {
+                if (this.canMoveDown(row, col)) {
                     return { row: row + 1, col, lastDirection: Direction.DOWN };
                 }
                 break;
@@ -699,37 +727,129 @@ export class Pathfinder {
         return { row, col, lastDirection: Direction.ERROR };
     }
 
-    // Helper methods for readability
-    private hasInvalidUpwardConnection(neighbors: NeighborPoints): boolean {
-        return Boolean(neighbors.up && neighbors.up === this.INVALID_VERTICAL_CONNECTION);
+    /**
+     * Checks if it is possible to move right.
+     * If the point is on an intersection, it is possible to move right, even if the neighbor is a vertical road.
+     * i.e.
+     * ```
+     *    | 
+     * --A|-- -> it is possibe to move right
+     *    |
+     * * where the A letter represents the point we are on
+     * ```
+     * 
+     * @param row - row of the point
+     * @param col - column of the point
+     * @returns true if it is possible to move right, false otherwise
+     */
+    protected canMoveRight(row: number, col: number): boolean {
+        const rightNeighbor = this.grid.getPoint(row, col + 1);
+        if (!rightNeighbor) {
+            return false;
+        }
+
+        const canMoveRight = rightNeighbor !== this.VERTICAL_ROAD || this.isPointOnIntersection(row, col + 1);
+        return canMoveRight;
     }
 
-    private hasInvalidDownwardConnection(neighbors: NeighborPoints): boolean {
-        return Boolean(neighbors.down && neighbors.down === this.INVALID_VERTICAL_CONNECTION);
+    /**
+     * Checks if it is possible to move up.
+     * If the point is on an intersection, it is possible to move left, even if the neighbor is a vertical road.
+     * i.e.
+     * ```
+     *    | 
+     * ---|A-- -> it is possibe to move left
+     *    |
+     * * where the A letter represents the point we are on
+     * ```
+     * 
+     * @param row - row of the point
+     * @param col - column of the point
+     * @returns true if it is possible to move left, false otherwise
+     */
+    protected canMoveLeft(row: number, col: number): boolean {
+        const leftNeighbor = this.grid.getPoint(row, col - 1);
+        if (!leftNeighbor) {
+            return false;
+        }
+
+        const canMoveLeft = leftNeighbor !== this.VERTICAL_ROAD || this.isPointOnIntersection(row, col - 1);
+        return canMoveLeft;
     }
 
-    private hasInvalidLeftwardConnection(neighbors: NeighborPoints): boolean {
-        return Boolean(neighbors.left && neighbors.left === this.INVALID_HORIZONTAL_CONNECTION);
+    /**
+     * Checks if it is possible to move up.
+     * If the point is on an intersection, it is possible to move up, even if the neighbor is a horizontal road.
+     * i.e.
+     * ```
+     *    | 
+     * ------- -> it is possibe to move up
+     *    | -> we are here
+     * ```
+     * 
+     * @param row - row of the point
+     * @param col - column of the point
+     * @returns true if it is possible to move up, false otherwise
+     */
+    protected canMoveUp(row: number, col: number): boolean {
+        const upNeighbor = this.grid.getPoint(row - 1, col);
+        if (!upNeighbor) {
+            return false;
+        }
+     
+        const canMoveUp = upNeighbor !== this.HORIZONTAL_ROAD || this.isPointOnIntersection(row - 1, col);
+        return canMoveUp;
     }
 
-    private hasInvalidRightwardConnection(neighbors: NeighborPoints): boolean {
-        return Boolean(neighbors.right && neighbors.right === this.INVALID_HORIZONTAL_CONNECTION);
+    /**
+     * Checks if it is possible to move down.
+     * If the point is on an intersection, it is possible to move down, even if the neighbor is a horizontal road road.
+     * i.e.
+     * ```
+     *    | -> we are here
+     * ------- -> it is possibe to move down
+     *    |
+     * ```
+     * 
+     * @param row - row of the point
+     * @param col - column of the point
+     * @returns true if it is possible to move down, false otherwise
+     */
+    protected canMoveDown(row: number, col: number): boolean {
+        const downNeighbor = this.grid.getPoint(row + 1, col);
+        if (!downNeighbor) {
+            return false;
+        }
+
+        const canMoveDown = downNeighbor !== this.HORIZONTAL_ROAD || this.isPointOnIntersection(row + 1, col);
+        return canMoveDown;
     }
 
-    private isVerticalStraightPath(neighbors: NeighborPoints): boolean {
-        return Boolean(neighbors.up && neighbors.down && !neighbors.left && !neighbors.right);
-    }
+    /**
+     * Checks if a point is on an intersection.
+     * @param row - row of the point
+     * @param col - column of the point
+     * @returns true if the point is on an intersection, false otherwise
+     */
+    protected isPointOnIntersection(row: number, col: number): boolean {
+        const neighbors = this.grid.getNeighbors(row, col);
+        let numNeighbors = Object.values(neighbors).filter(Boolean).length;
 
-    private isHorizontalStraightPath(neighbors: NeighborPoints): boolean {
-        return Boolean(!neighbors.up && !neighbors.down && neighbors.left && neighbors.right);
-    }
+        // eliminate fake neighbors
+        if (neighbors.up && neighbors.up === this.HORIZONTAL_ROAD) {
+            numNeighbors--;
+        }
+        if (neighbors.down && neighbors.down === this.HORIZONTAL_ROAD) {
+            numNeighbors--;
+        }
+        if (neighbors.left && neighbors.left === this.VERTICAL_ROAD) {
+            numNeighbors--;
+        }
+        if (neighbors.right && neighbors.right === this.VERTICAL_ROAD) {
+            numNeighbors--;
+        }
 
-    private canMoveVertically(neighbor: string): boolean {
-        return Boolean(neighbor && neighbor !== this.INVALID_VERTICAL_CONNECTION);
-    }
-
-    private canMoveHorizontally(neighbor: string): boolean {
-        return Boolean(neighbor && neighbor !== this.INVALID_HORIZONTAL_CONNECTION);
+        return numNeighbors === 4;
     }
 
     /**
@@ -740,12 +860,24 @@ export class Pathfinder {
      */
     private getCollectedLetters(visitedCoordinates: { row: number, col: number, character: string }[]): string {
         const uniqueLetters = visitedCoordinates.reduce((letters: {row: number, col: number, character: string}[], current) => {
-            if (this.UPPERCASE_ALPHABET.test(current.character) && !letters.some(x => x.row === current.row && x.col === current.col)) {
+            const isLetter = this.UPPERCASE_ALPHABET.test(current.character);
+            const isNotDuplicate = !letters.some(x => x.row === current.row && x.col === current.col);
+            if (isLetter && isNotDuplicate) {
                 letters.push(current);
             }
             return letters;
         }, []);
 
         return uniqueLetters.map(x => x.character).join('');
+    }
+
+    // Helper methods for readability
+
+    protected isVerticalStraightPath(neighbors: NeighborPoints): boolean {
+        return Boolean(neighbors.up && neighbors.down && !neighbors.left && !neighbors.right);
+    }
+
+    protected isHorizontalStraightPath(neighbors: NeighborPoints): boolean {
+        return Boolean(!neighbors.up && !neighbors.down && neighbors.left && neighbors.right);
     }
 }

@@ -1,10 +1,10 @@
-import { Pathfinder } from "./pathfinder";
+import { Pathfinder } from "../pathfinder";
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 
 const readExample = (path: string) => {
-    return readFileSync(join(__dirname, '../examples', path), 'utf-8')
+    return readFileSync(join(__dirname, '../../examples', path), 'utf-8')
         .split('\n')
         .map(line => line.split(''));
 };

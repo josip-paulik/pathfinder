@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { Grid } from './grid';
+import { Grid } from '../grid';
 
 describe('Grid', () => {
     describe('getPoint', () => {
