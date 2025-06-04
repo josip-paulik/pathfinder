@@ -30,6 +30,16 @@ app/
   - All valid examples from the challenge (ACB, ABCD, GOONIES, etc.)
   - Invalid cases (multiple starts, missing end, broken paths, etc.)
   - Edge cases and error conditions
+ 
+- `app/pathfinder/grid.ts`: Contains the main `Grid` class that handles various grid operations. The class handles:
+  - Get points from various coordinates(handle coordinates outside of the grid)
+  - Get neighbours from given coordinates
+  - Run grid processing so that the programs which use Grid, don't even have direct influence on grid
+
+- `app/pathfinder/grid.test.ts`: Comprehensive test suite covering:
+  - Getting points from various coordinates
+  - Getting neighbors of points from various coordinates
+  - Running processing on grid
 
 - `app/routes/home.tsx`: React component providing:
   - Visual grid input interface
