@@ -1,6 +1,6 @@
 # Pathfinder Challenge Solution
 
-This is my solution to the Software Sauna [Code Challenge](https://github.com/softwaresauna/code-challenge). The solution is implemented as a React application with TypeScript, providing both a visual interface and comprehensive test coverage. For testing, Vitest was the chosen framework because of ease of setup.
+This is my solution to the Software Sauna Code Challenge. The solution is implemented as a React application with TypeScript, providing both a visual interface and comprehensive test coverage. For testing, Vitest was the chosen framework because of ease of setup.
 
 ## Project Structure
 
